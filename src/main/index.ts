@@ -1,5 +1,53 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
+import * as fs from 'fs/promises';
+import * as yaml from 'yaml';
+import { KernelManager, PythonSetup, PythonEnvironment, KernelOutput } from './kernel';
+
+// Settings file path
+const getSettingsPath = () => path.join(app.getPath('userData'), 'settings.json');
+
+// Default settings
+interface AppSettings {
+  python: { selectedEnvironment?: string };
+  ai: { provider: 'claude' | 'openai' };
+  kernel: { startupTimeout: number };
+}
+
+const defaultSettings: AppSettings = {
+  python: {},
+  ai: { provider: 'claude' },
+  kernel: { startupTimeout: 30000 },
+};
+
+// Load settings
+async function loadSettings(): Promise<AppSettings> {
+  try {
+    const content = await fs.readFile(getSettingsPath(), 'utf-8');
+    return { ...defaultSettings, ...JSON.parse(content) };
+  } catch {
+    return defaultSettings;
+  }
+}
+
+// Save settings
+async function saveSettings(settings: AppSettings): Promise<void> {
+  await fs.writeFile(getSettingsPath(), JSON.stringify(settings, null, 2));
+}
+
+// Current settings (cached)
+let currentSettings = defaultSettings;
+
+// Python environment management
+const pythonSetup = new PythonSetup();
+let cachedEnvironments: PythonEnvironment[] = [];
+let kernelManager: KernelManager | null = null;
+
+// Scan for Python environments
+async function scanEnvironments(): Promise<PythonEnvironment[]> {
+  cachedEnvironments = await pythonSetup.discoverEnvironments();
+  return cachedEnvironments;
+}
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -26,7 +74,47 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(createWindow);
+// Forward kernel events to renderer
+function setupKernelEventForwarding(): void {
+  if (!kernelManager || !mainWindow) return;
+
+  kernelManager.on('output', (output: KernelOutput, msgId: string) => {
+    mainWindow?.webContents.send('kernel:output', output, msgId);
+  });
+
+  kernelManager.on('stateChange', (state: string) => {
+    mainWindow?.webContents.send('kernel:stateChange', state);
+  });
+
+  kernelManager.on('error', (error: Error) => {
+    mainWindow?.webContents.send('kernel:error', error.message);
+  });
+}
+
+app.whenReady().then(async () => {
+  currentSettings = await loadSettings();
+  createWindow();
+
+  // Scan for environments in background
+  scanEnvironments().catch(console.error);
+
+  // If we have a previously selected environment, try to start the kernel
+  if (currentSettings.python.selectedEnvironment) {
+    const env = cachedEnvironments.find(
+      (e) => e.path === currentSettings.python.selectedEnvironment
+    );
+    if (env) {
+      try {
+        kernelManager = new KernelManager(env.path);
+        setupKernelEventForwarding();
+        await kernelManager.start();
+        mainWindow?.webContents.send('kernel:stateChange', kernelManager.getState());
+      } catch (err) {
+        console.error('Failed to start kernel:', err);
+      }
+    }
+  }
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -40,25 +128,237 @@ app.on('activate', () => {
   }
 });
 
-// IPC handlers
-ipcMain.handle('kernel:execute', async (_event, _code: string) => {
-  return { success: true, output: 'Kernel not yet implemented' };
+app.on('before-quit', async () => {
+  if (kernelManager) {
+    await kernelManager.shutdown();
+  }
 });
 
-ipcMain.handle('ai:sync', async (_event, _cellId: string, _direction: string) => {
+// Kernel IPC handlers
+ipcMain.handle('kernel:getEnvironments', async () => {
+  return cachedEnvironments;
+});
+
+ipcMain.handle('kernel:scanEnvironments', async () => {
+  return scanEnvironments();
+});
+
+ipcMain.handle('kernel:selectEnvironment', async (_event, pythonPath: string) => {
+  try {
+    // Shutdown existing kernel
+    if (kernelManager) {
+      await kernelManager.shutdown();
+    }
+
+    // Find the environment
+    const env = cachedEnvironments.find((e) => e.path === pythonPath);
+    if (!env) {
+      return { success: false, error: 'Environment not found' };
+    }
+
+    // Check if ipykernel is installed
+    if (!env.hasIpykernel) {
+      return { success: false, error: 'ipykernel not installed', needsInstall: true };
+    }
+
+    // Start new kernel
+    kernelManager = new KernelManager(pythonPath);
+    // Set up event forwarding BEFORE starting so we catch all state changes
+    setupKernelEventForwarding();
+    await kernelManager.start();
+    // Send current state to renderer in case events were missed
+    mainWindow?.webContents.send('kernel:stateChange', kernelManager.getState());
+
+    // Save the selection
+    currentSettings.python.selectedEnvironment = pythonPath;
+    await saveSettings(currentSettings);
+
+    return { success: true };
+  } catch (err) {
+    console.error('Error selecting environment:', err);
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('kernel:installIpykernel', async (_event, pythonPath: string) => {
+  const result = await pythonSetup.installIpykernel(pythonPath);
+  if (result.success) {
+    // Rescan environments to update hasIpykernel status
+    await scanEnvironments();
+  }
+  return result;
+});
+
+ipcMain.handle('kernel:execute', async (_event, code: string) => {
+  if (!kernelManager) {
+    return { success: false, error: 'No kernel running', needsEnvironment: true };
+  }
+
+  try {
+    const result = await kernelManager.execute(code);
+    return { success: true, msgId: result.msgId, outputs: result.outputs };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('kernel:interrupt', async () => {
+  if (!kernelManager) {
+    return { success: false, error: 'No kernel running' };
+  }
+
+  try {
+    await kernelManager.interrupt();
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('kernel:restart', async () => {
+  if (!kernelManager) {
+    return { success: false, error: 'No kernel running' };
+  }
+
+  try {
+    await kernelManager.restart();
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('kernel:getStatus', async () => {
+  if (!kernelManager) {
+    return { state: 'disconnected', executionCount: 0 };
+  }
+  return {
+    state: kernelManager.getState(),
+    executionCount: kernelManager.getExecutionCount(),
+  };
+});
+
+ipcMain.handle('kernel:testPython', async (_event, pythonPath: string) => {
+  const hasIpykernel = await pythonSetup.checkIpykernel(pythonPath);
+  return { success: true, hasIpykernel };
+});
+
+ipcMain.handle('kernel:createVenv', async (_event, venvName: string = '.venv') => {
+  const result = await pythonSetup.createVenv(venvName);
+  if (result.success) {
+    // Rescan environments to include the new venv
+    await scanEnvironments();
+  }
+  return result;
+});
+
+// AI handlers
+ipcMain.handle('ai:sync', async (_event, _cellId: string, direction: string, content: string) => {
+  try {
+    const Anthropic = (await import('@anthropic-ai/sdk')).default;
+    const client = new Anthropic();
+
+    if (direction === 'toCode') {
+      // Generate Python code from instructions
+      const message = await client.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        messages: [
+          {
+            role: 'user',
+            content: `Generate Python code for the following task. Return ONLY the Python code, no explanations or markdown:\n\n${content}`,
+          },
+        ],
+      });
+
+      const textBlock = message.content.find((block) => block.type === 'text');
+      if (textBlock && textBlock.type === 'text') {
+        // Clean up the response - remove markdown code blocks if present
+        let code = textBlock.text;
+        code = code.replace(/^```python\n?/i, '').replace(/\n?```$/i, '');
+        code = code.replace(/^```\n?/, '').replace(/\n?```$/, '');
+        return { success: true, result: code.trim() };
+      }
+      return { success: false, error: 'No code generated' };
+    } else {
+      // Generate instructions from code
+      const message = await client.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        messages: [
+          {
+            role: 'user',
+            content: `Describe what this Python code does in a concise instruction. Return ONLY the description, no code:\n\n${content}`,
+          },
+        ],
+      });
+
+      const textBlock = message.content.find((block) => block.type === 'text');
+      if (textBlock && textBlock.type === 'text') {
+        return { success: true, result: textBlock.text.trim() };
+      }
+      return { success: false, error: 'No description generated' };
+    }
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    return { success: false, error: `AI Error: ${errorMessage}` };
+  }
+});
+
+// Settings handlers
+ipcMain.handle('settings:load', async () => {
+  return currentSettings;
+});
+
+ipcMain.handle('settings:save', async (_event, settings: AppSettings) => {
+  currentSettings = settings;
+  await saveSettings(settings);
   return { success: true };
 });
 
+// File handlers
 ipcMain.handle('file:open', async () => {
   const { dialog } = await import('electron');
   const result = await dialog.showOpenDialog(mainWindow!, {
-    filters: [{ name: 'Promptbook', extensions: ['promptbook'] }],
+    filters: [
+      { name: 'Promptbook', extensions: ['yaml', 'yml', 'promptbook'] },
+    ],
   });
   return result.filePaths[0];
 });
 
-ipcMain.handle('file:save', async (_event, filePath: string, content: string) => {
-  const fs = await import('fs/promises');
-  await fs.writeFile(filePath, content);
+ipcMain.handle('file:read', async (_event, filePath: string) => {
+  const content = await fs.readFile(filePath, 'utf-8');
+  return yaml.parse(content);
+});
+
+ipcMain.handle('file:save', async (_event, filePath: string, notebook: unknown) => {
+  const content = yaml.stringify(notebook, {
+    indent: 2,
+    lineWidth: 120,
+  });
+  await fs.writeFile(filePath, content, 'utf-8');
   return { success: true };
+});
+
+ipcMain.handle('file:saveAs', async (_event, notebook: unknown) => {
+  const { dialog } = await import('electron');
+
+  const result = await dialog.showSaveDialog(mainWindow!, {
+    filters: [
+      { name: 'Promptbook YAML', extensions: ['yaml'] },
+    ],
+    defaultPath: 'notebook.yaml',
+  });
+
+  if (result.canceled || !result.filePath) {
+    return { success: false, filePath: null };
+  }
+
+  const content = yaml.stringify(notebook, {
+    indent: 2,
+    lineWidth: 120,
+  });
+  await fs.writeFile(result.filePath, content, 'utf-8');
+  return { success: true, filePath: result.filePath };
 });
