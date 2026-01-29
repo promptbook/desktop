@@ -41,11 +41,11 @@ app.on('activate', () => {
 });
 
 // IPC handlers
-ipcMain.handle('kernel:execute', async (_event, code: string) => {
+ipcMain.handle('kernel:execute', async (_event, _code: string) => {
   return { success: true, output: 'Kernel not yet implemented' };
 });
 
-ipcMain.handle('ai:sync', async (_event, cellId: string, direction: string) => {
+ipcMain.handle('ai:sync', async (_event, _cellId: string, _direction: string) => {
   return { success: true };
 });
 

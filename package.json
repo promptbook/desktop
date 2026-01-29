@@ -7,7 +7,8 @@
     "build": "tsc && vite build",
     "dev": "concurrently \"tsc -w\" \"vite\"",
     "start": "electron .",
-    "package": "electron-builder"
+    "package": "electron-builder",
+    "lint": "eslint src --max-warnings 0"
   },
   "dependencies": {
     "@promptbook/core": "workspace:*"
