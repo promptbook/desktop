@@ -758,6 +758,109 @@ export function App() {
     [notebook.cells, handleUpdate, handleSaveVersion]
   );
 
+  // Cell manipulation callbacks (defined before useEffect that depends on them)
+  const handleAddCell = useCallback((afterCellId?: string, cellType: CellType = 'code') => {
+    const newCell = cellType === 'text'
+      ? createTextCell(`cell-${Date.now()}`)
+      : createCodeCell(`cell-${Date.now()}`);
+    setNotebook((prev) => {
+      if (!afterCellId) {
+        return { ...prev, cells: [...prev.cells, newCell] };
+      }
+      const index = prev.cells.findIndex((c) => c.id === afterCellId);
+      const newCells = [...prev.cells];
+      newCells.splice(index + 1, 0, newCell);
+      return { ...prev, cells: newCells };
+    });
+  }, []);
+
+  const handleMoveCell = useCallback((cellId: string, direction: 'up' | 'down') => {
+    setNotebook((prev) => {
+      const index = prev.cells.findIndex((c) => c.id === cellId);
+      if (index === -1) return prev;
+
+      const newIndex = direction === 'up' ? index - 1 : index + 1;
+      if (newIndex < 0 || newIndex >= prev.cells.length) return prev;
+
+      const newCells = [...prev.cells];
+      const [movedCell] = newCells.splice(index, 1);
+      newCells.splice(newIndex, 0, movedCell);
+
+      return { ...prev, cells: newCells };
+    });
+  }, []);
+
+  const handleDeleteCell = useCallback((cellId: string) => {
+    setNotebook((prev) => ({
+      ...prev,
+      cells: prev.cells.filter((c) => c.id !== cellId),
+    }));
+  }, []);
+
+  // Run All Cells sequentially
+  const handleRunAllCells = useCallback(async () => {
+    const codeCells = notebook.cells.filter((c) => c.cellType === 'code');
+    for (const cell of codeCells) {
+      await handleRunCell(cell.id);
+    }
+  }, [notebook.cells, handleRunCell]);
+
+  // Copy cell to clipboard
+  const handleCopyCell = useCallback(() => {
+    if (!activeCellId) return;
+    const cell = notebook.cells.find((c) => c.id === activeCellId);
+    if (cell) {
+      setCopiedCell({ ...cell });
+    }
+  }, [activeCellId, notebook.cells]);
+
+  // Cut cell (copy + delete)
+  const handleCutCell = useCallback(() => {
+    if (!activeCellId) return;
+    handleCopyCell();
+    handleDeleteCell(activeCellId);
+    // Move to next cell
+    const index = notebook.cells.findIndex((c) => c.id === activeCellId);
+    if (index < notebook.cells.length - 1) {
+      setActiveCellId(notebook.cells[index + 1].id);
+    } else if (index > 0) {
+      setActiveCellId(notebook.cells[index - 1].id);
+    }
+  }, [activeCellId, handleCopyCell, handleDeleteCell, notebook.cells]);
+
+  // Paste cell below active
+  const handlePasteCell = useCallback(() => {
+    if (!copiedCell) return;
+    const newCell = { ...copiedCell, id: `cell-${Date.now()}` };
+    setNotebook((prev) => {
+      if (!activeCellId) {
+        return { ...prev, cells: [...prev.cells, newCell] };
+      }
+      const index = prev.cells.findIndex((c) => c.id === activeCellId);
+      const newCells = [...prev.cells];
+      newCells.splice(index + 1, 0, newCell);
+      return { ...prev, cells: newCells };
+    });
+    setActiveCellId(newCell.id);
+  }, [copiedCell, activeCellId]);
+
+  // Add cell above active
+  const handleAddCellAbove = useCallback((cellType: CellType = 'code') => {
+    const newCell = cellType === 'text'
+      ? createTextCell(`cell-${Date.now()}`)
+      : createCodeCell(`cell-${Date.now()}`);
+    setNotebook((prev) => {
+      if (!activeCellId) {
+        return { ...prev, cells: [newCell, ...prev.cells] };
+      }
+      const index = prev.cells.findIndex((c) => c.id === activeCellId);
+      const newCells = [...prev.cells];
+      newCells.splice(index, 0, newCell);
+      return { ...prev, cells: newCells };
+    });
+    setActiveCellId(newCell.id);
+  }, [activeCellId]);
+
   // Jupyter-style keyboard shortcuts
   useEffect(() => {
     let deleteCount = 0;
@@ -1086,52 +1189,6 @@ export function App() {
     [notebook.cells, handleUpdate]
   );
 
-  const handleAddCell = useCallback((afterCellId?: string, cellType: CellType = 'code') => {
-    const newCell = cellType === 'text'
-      ? createTextCell(`cell-${Date.now()}`)
-      : createCodeCell(`cell-${Date.now()}`);
-    setNotebook((prev) => {
-      if (!afterCellId) {
-        return { ...prev, cells: [...prev.cells, newCell] };
-      }
-      const index = prev.cells.findIndex((c) => c.id === afterCellId);
-      const newCells = [...prev.cells];
-      newCells.splice(index + 1, 0, newCell);
-      return { ...prev, cells: newCells };
-    });
-  }, []);
-
-  const handleMoveCell = useCallback((cellId: string, direction: 'up' | 'down') => {
-    setNotebook((prev) => {
-      const index = prev.cells.findIndex((c) => c.id === cellId);
-      if (index === -1) return prev;
-
-      const newIndex = direction === 'up' ? index - 1 : index + 1;
-      if (newIndex < 0 || newIndex >= prev.cells.length) return prev;
-
-      const newCells = [...prev.cells];
-      const [movedCell] = newCells.splice(index, 1);
-      newCells.splice(newIndex, 0, movedCell);
-
-      return { ...prev, cells: newCells };
-    });
-  }, []);
-
-  const handleDeleteCell = useCallback((cellId: string) => {
-    setNotebook((prev) => ({
-      ...prev,
-      cells: prev.cells.filter((c) => c.id !== cellId),
-    }));
-  }, []);
-
-  // Run All Cells sequentially
-  const handleRunAllCells = useCallback(async () => {
-    const codeCells = notebook.cells.filter((c) => c.cellType === 'code');
-    for (const cell of codeCells) {
-      await handleRunCell(cell.id);
-    }
-  }, [notebook.cells, handleRunCell]);
-
   // Run cells above the active cell
   const handleRunAbove = useCallback(async () => {
     if (!activeCellId) return;
@@ -1166,62 +1223,6 @@ export function App() {
       })),
     }));
   }, []);
-
-  // Copy cell to clipboard
-  const handleCopyCell = useCallback(() => {
-    if (!activeCellId) return;
-    const cell = notebook.cells.find((c) => c.id === activeCellId);
-    if (cell) {
-      setCopiedCell({ ...cell });
-    }
-  }, [activeCellId, notebook.cells]);
-
-  // Cut cell (copy + delete)
-  const handleCutCell = useCallback(() => {
-    if (!activeCellId) return;
-    handleCopyCell();
-    handleDeleteCell(activeCellId);
-    // Move to next cell
-    const index = notebook.cells.findIndex((c) => c.id === activeCellId);
-    if (index < notebook.cells.length - 1) {
-      setActiveCellId(notebook.cells[index + 1].id);
-    } else if (index > 0) {
-      setActiveCellId(notebook.cells[index - 1].id);
-    }
-  }, [activeCellId, handleCopyCell, handleDeleteCell, notebook.cells]);
-
-  // Paste cell below active
-  const handlePasteCell = useCallback(() => {
-    if (!copiedCell) return;
-    const newCell = { ...copiedCell, id: `cell-${Date.now()}` };
-    setNotebook((prev) => {
-      if (!activeCellId) {
-        return { ...prev, cells: [...prev.cells, newCell] };
-      }
-      const index = prev.cells.findIndex((c) => c.id === activeCellId);
-      const newCells = [...prev.cells];
-      newCells.splice(index + 1, 0, newCell);
-      return { ...prev, cells: newCells };
-    });
-    setActiveCellId(newCell.id);
-  }, [copiedCell, activeCellId]);
-
-  // Add cell above active
-  const handleAddCellAbove = useCallback((cellType: CellType = 'code') => {
-    const newCell = cellType === 'text'
-      ? createTextCell(`cell-${Date.now()}`)
-      : createCodeCell(`cell-${Date.now()}`);
-    setNotebook((prev) => {
-      if (!activeCellId) {
-        return { ...prev, cells: [newCell, ...prev.cells] };
-      }
-      const index = prev.cells.findIndex((c) => c.id === activeCellId);
-      const newCells = [...prev.cells];
-      newCells.splice(index, 0, newCell);
-      return { ...prev, cells: newCells };
-    });
-    setActiveCellId(newCell.id);
-  }, [activeCellId]);
 
   // Handle refresh variables for inspector
   const handleRefreshVariables = useCallback(async (): Promise<Variable[]> => {
