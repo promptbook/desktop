@@ -374,40 +374,81 @@ ${newContent}
 
 // AI handlers
 async function aiSyncWithAgent(direction: string, context: AiSyncContext): Promise<{ success: boolean; result?: string; error?: string }> {
-  const { query } = await dynamicImport('@anthropic-ai/claude-agent-sdk');
+  try {
+    const { query } = await dynamicImport('@anthropic-ai/claude-agent-sdk');
 
-  const prompt = buildSyncPrompt(direction, context);
+    const prompt = buildSyncPrompt(direction, context);
+    console.log('[AI Sync] Starting query with prompt length:', prompt.length);
 
-  const q = query({
-    prompt,
-    options: {
-      maxTurns: 1,
-      tools: [], // No tools needed for simple code generation
-    },
-  });
+    const q = query({
+      prompt,
+      options: {
+        maxTurns: 1,
+        // Disable all tools - we only need text generation
+        tools: [],
+        // Don't persist session for these quick queries
+        persistSession: false,
+      },
+    });
 
-  let result = '';
-  for await (const message of q) {
-    if (message.type === 'assistant' && message.message?.content) {
-      for (const block of message.message.content) {
-        if (block.type === 'text') {
-          result += block.text;
+    let result = '';
+    let lastError = '';
+
+    for await (const message of q) {
+      console.log('[AI Sync] Received message type:', message.type, message.subtype || '');
+
+      // Handle result message (success or error)
+      if (message.type === 'result') {
+        if (message.subtype === 'error' || message.is_error) {
+          lastError = (message as { error?: string }).error ||
+                      (message as { result?: string }).result ||
+                      'Unknown error from Claude';
+          console.error('[AI Sync] Result error:', lastError);
+          continue; // Continue to see if there's more info
+        }
+        // Use the result field from SDKResultSuccess
+        if (message.result) {
+          result = message.result;
         }
       }
+
+      // Also capture from assistant messages
+      if (message.type === 'assistant' && message.message?.content) {
+        for (const block of message.message.content) {
+          if (block.type === 'text') {
+            result += block.text;
+          }
+        }
+      }
+
+      // Capture system messages for debugging
+      if (message.type === 'system') {
+        console.log('[AI Sync] System message:', JSON.stringify(message).slice(0, 500));
+      }
     }
-  }
 
-  if (!result) {
-    return { success: false, error: 'No response generated' };
-  }
+    if (!result && lastError) {
+      return { success: false, error: lastError };
+    }
 
-  // Clean up markdown code blocks if present
-  if (direction === 'toCode') {
-    result = result.replace(/^```python\n?/i, '').replace(/\n?```$/i, '');
-    result = result.replace(/^```\n?/, '').replace(/\n?```$/i, '');
-  }
+    if (!result) {
+      return { success: false, error: 'No response generated' };
+    }
 
-  return { success: true, result: result.trim() };
+    // Clean up markdown code blocks if present
+    if (direction === 'toCode') {
+      result = result.replace(/^```python\n?/i, '').replace(/\n?```$/i, '');
+      result = result.replace(/^```\n?/, '').replace(/\n?```$/i, '');
+    }
+
+    return { success: true, result: result.trim() };
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : '';
+    console.error('[AI Sync] Exception:', errorMessage);
+    console.error('[AI Sync] Stack:', stack);
+    return { success: false, error: `Agent SDK Error: ${errorMessage}` };
+  }
 }
 
 async function aiSyncWithClaude(direction: string, context: AiSyncContext): Promise<{ success: boolean; result?: string; error?: string }> {
