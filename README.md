@@ -38,6 +38,30 @@ When code execution fails due to a missing Python module, Promptbook automatical
 
 Package names are automatically mapped (e.g., `cv2` → `opencv-python`) and can be edited before installation.
 
+### Shell Commands & IPython Magic
+
+Full IPython support via ipykernel:
+
+```python
+# Shell commands (prefix with !)
+!pip install pandas
+!ls -la
+!echo "Hello from shell"
+
+# Capture output to variable
+files = !ls *.py
+
+# IPython magics
+%pip install numpy    # Recommended for package installation
+%timeit sum(range(1000))
+%who                  # List variables
+%reset                # Clear namespace
+
+# Cell magics
+%%time
+slow_operation()
+```
+
 ## Development
 
 ```bash
