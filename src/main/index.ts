@@ -438,11 +438,15 @@ ${newContent}
 
 Return ONLY the shortened instructions, no code or markdown.`;
   }
-  const hasExistingCode = direction === 'toCode' && existingCounterpart?.trim();
-  const hasExistingInstructions = direction === 'toInstructions' && existingCounterpart?.trim();
+  // Normalize direction types
+  const isToCode = direction === 'toCode' || direction === 'fullToCode' || direction === 'shortToCode';
+  const isToInstructions = direction === 'toInstructions' || direction === 'codeToShort' || direction === 'codeToFull';
+
+  const hasExistingCode = isToCode && existingCounterpart?.trim();
+  const hasExistingInstructions = isToInstructions && existingCounterpart?.trim();
   const hasChanges = previousContent && previousContent !== newContent;
 
-  if (direction === 'toCode') {
+  if (isToCode) {
     if (hasExistingCode && hasChanges) {
       // Incremental update: instructions changed, update existing code
       return `You are updating Python code based on changed instructions.
@@ -588,7 +592,8 @@ async function aiSyncWithAgent(direction: string, context: AiSyncContext): Promi
     }
 
     // Clean up markdown code blocks (same as Wonderland)
-    if (direction === 'toCode') {
+    const isToCode = direction === 'toCode' || direction === 'fullToCode' || direction === 'shortToCode';
+    if (isToCode) {
       // Handle ```python and ``` blocks
       const codeMatch = result.match(/```(?:python)?\s*([\s\S]*?)```/);
       if (codeMatch) {
@@ -619,7 +624,8 @@ async function aiSyncWithClaude(direction: string, context: AiSyncContext): Prom
   const textBlock = message.content.find((block) => block.type === 'text');
   if (textBlock && textBlock.type === 'text') {
     let result = textBlock.text;
-    if (direction === 'toCode') {
+    const isToCode = direction === 'toCode' || direction === 'fullToCode' || direction === 'shortToCode';
+    if (isToCode) {
       result = result.replace(/^```python\n?/i, '').replace(/\n?```$/i, '');
       result = result.replace(/^```\n?/, '').replace(/\n?```$/i, '');
     }
