@@ -304,19 +304,43 @@ export function App() {
         return;
       }
 
-      const result = await window.promptbook.ai.sync(cellId, direction, content);
+      // Check cache: skip AI call if content hasn't changed since last sync
+      if (direction === 'toCode' && cell.lastSyncedInstructions === content.trim()) {
+        // Content hasn't changed, no need to call AI again
+        handleUpdate(cellId, { isDirty: false });
+        return;
+      }
 
-      if (result.success && result.result) {
-        if (direction === 'toCode') {
-          handleUpdate(cellId, { code: result.result, isDirty: false });
+      // Set syncing state to show progress overlay
+      handleUpdate(cellId, { isSyncing: true });
+
+      try {
+        const result = await window.promptbook.ai.sync(cellId, direction, content);
+
+        if (result.success && result.result) {
+          if (direction === 'toCode') {
+            handleUpdate(cellId, {
+              code: result.result,
+              isDirty: false,
+              isSyncing: false,
+              lastSyncedInstructions: content.trim(), // Cache the synced instructions
+            });
+          } else {
+            handleUpdate(cellId, {
+              instructions: { text: result.result, parameters: cell.instructions?.parameters || [] },
+              isDirty: false,
+              isSyncing: false,
+            });
+          }
         } else {
-          handleUpdate(cellId, {
-            instructions: { text: result.result, parameters: cell.instructions?.parameters || [] },
-            isDirty: false
-          });
+          handleUpdate(cellId, { isSyncing: false });
+          if (result.error) {
+            setGlobalError(result.error);
+          }
         }
-      } else if (result.error) {
-        setGlobalError(result.error);
+      } catch (error) {
+        handleUpdate(cellId, { isSyncing: false });
+        setGlobalError(String(error));
       }
     },
     [notebook.cells, handleUpdate]
