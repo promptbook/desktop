@@ -322,13 +322,33 @@ export function App() {
 
           if (syncResult.success && syncResult.result) {
             const generatedCode = syncResult.result;
+
+            // Sync back to generate/update descriptions from the code
+            const [shortResult, fullResult] = await Promise.all([
+              window.promptbook.ai.sync(cellId, 'codeToShort', {
+                newContent: generatedCode,
+                existingCounterpart: cell.shortDescription,
+              }),
+              window.promptbook.ai.sync(cellId, 'codeToFull', {
+                newContent: generatedCode,
+                existingCounterpart: cell.fullDescription,
+              }),
+            ]);
+
+            const newShort = shortResult.success ? shortResult.result || cell.shortDescription : cell.shortDescription;
+            const newFull = fullResult.success ? fullResult.result || cell.fullDescription : cell.fullDescription;
+
             handleUpdate(cellId, {
               code: generatedCode,
+              shortDescription: newShort,
+              fullDescription: newFull,
               lastSyncedCode: generatedCode,
+              lastSyncedShort: newShort,
+              lastSyncedFull: newFull,
               isDirty: false,
               isSyncing: false,
             });
-            cell = { ...cell, code: generatedCode };
+            cell = { ...cell, code: generatedCode, shortDescription: newShort, fullDescription: newFull };
           } else {
             handleUpdate(cellId, { isSyncing: false });
             if (syncResult.error) {
@@ -356,13 +376,33 @@ export function App() {
 
           if (syncResult.success && syncResult.result) {
             const generatedCode = syncResult.result;
+
+            // Now sync back to generate/update descriptions from the code
+            const [shortResult, fullResult] = await Promise.all([
+              window.promptbook.ai.sync(cellId, 'codeToShort', {
+                newContent: generatedCode,
+                existingCounterpart: cell.shortDescription,
+              }),
+              window.promptbook.ai.sync(cellId, 'codeToFull', {
+                newContent: generatedCode,
+                existingCounterpart: cell.fullDescription,
+              }),
+            ]);
+
+            const newShort = shortResult.success ? shortResult.result || cell.shortDescription : cell.shortDescription;
+            const newFull = fullResult.success ? fullResult.result || cell.fullDescription : cell.fullDescription;
+
             handleUpdate(cellId, {
               code: generatedCode,
+              shortDescription: newShort,
+              fullDescription: newFull,
               lastSyncedCode: generatedCode,
+              lastSyncedShort: newShort,
+              lastSyncedFull: newFull,
               isDirty: false,
               isSyncing: false,
             });
-            cell = { ...cell, code: generatedCode };
+            cell = { ...cell, code: generatedCode, shortDescription: newShort, fullDescription: newFull };
           } else {
             handleUpdate(cellId, { isSyncing: false });
             if (syncResult.error) {
