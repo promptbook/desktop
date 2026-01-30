@@ -89,6 +89,17 @@ declare global {
         load: () => Promise<AppSettings>;
         save: (settings: AppSettings) => Promise<{ success: boolean }>;
       };
+      clipboard: {
+        read: () => Promise<string>;
+        write: (text: string) => Promise<{ success: boolean }>;
+        readHTML: () => Promise<string>;
+        writeHTML: (html: string) => Promise<{ success: boolean }>;
+      };
+      spellcheck: {
+        getLanguages: () => Promise<string[]>;
+        setLanguages: (languages: string[]) => Promise<{ success: boolean }>;
+        addWord: (word: string) => Promise<{ success: boolean }>;
+      };
     };
   }
 }
@@ -138,12 +149,22 @@ export function App() {
   const [installError, setInstallError] = useState<string | null>(null);
   const [globalError, setGlobalError] = useState<string | null>(null);
 
+  // Active cell tracking for keyboard shortcuts
+  const [activeCellId, setActiveCellId] = useState<string | null>(null);
+
   // Load settings and environments on mount
   useEffect(() => {
     window.promptbook.settings.load().then(setSettings);
     window.promptbook.kernel.scanEnvironments().then(setEnvironments);
     window.promptbook.kernel.getStatus().then(({ state }) => setKernelState(state));
   }, []);
+
+  // Set initial active cell when notebook loads
+  useEffect(() => {
+    if (notebook.cells.length > 0 && !activeCellId) {
+      setActiveCellId(notebook.cells[0].id);
+    }
+  }, [notebook.cells, activeCellId]);
 
   // Set up kernel event listeners
   useEffect(() => {
@@ -255,10 +276,53 @@ export function App() {
         return;
       }
 
-      // If we have instructions but no code, generate code first
       const hasInstructions = cell.instructions?.text?.trim();
       const hasCode = cell.code?.trim();
 
+      // If cell is dirty (text was edited, not just params), sync with AI first
+      // AI will try to preserve user edits while fixing any issues
+      if (cell.isDirty && hasInstructions && hasCode) {
+        console.log('[Run] Cell is dirty, syncing instructions → code with AI...');
+        handleUpdate(cellId, { isSyncing: true });
+
+        try {
+          // Provide AI with current instructions + previous synced instructions
+          // AI should try to preserve user edits, fix text if needed, then update code
+          const context = {
+            newContent: cell.instructions!.text.trim(),
+            previousContent: cell.lastSyncedInstructions, // What it was before user edited
+            existingCounterpart: cell.code, // Current code to update
+          };
+
+          console.log('[Run] Sync context:', context);
+          const syncResult = await window.promptbook.ai.sync(cellId, 'toCode', context);
+
+          if (syncResult.success && syncResult.result) {
+            const generatedCode = syncResult.result;
+            handleUpdate(cellId, {
+              code: generatedCode,
+              lastSyncedInstructions: cell.instructions!.text.trim(),
+              lastSyncedCode: generatedCode,
+              isDirty: false,
+              isSyncing: false,
+            });
+            // Update cell reference for execution
+            cell = { ...cell, code: generatedCode };
+          } else {
+            handleUpdate(cellId, { isSyncing: false });
+            if (syncResult.error) {
+              setGlobalError(syncResult.error);
+            }
+            return;
+          }
+        } catch (error) {
+          handleUpdate(cellId, { isSyncing: false });
+          setGlobalError(String(error));
+          return;
+        }
+      }
+
+      // If we have instructions but no code, generate code first
       if (hasInstructions && !hasCode) {
         // Generate code from instructions
         handleUpdate(cellId, { isSyncing: true });
@@ -364,6 +428,22 @@ export function App() {
     [notebook.cells, handleUpdate]
   );
 
+  // Keyboard shortcuts (Cmd+R to run active cell)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd+R (Mac) or Ctrl+R (Windows/Linux) to run active cell
+      if ((e.metaKey || e.ctrlKey) && e.key === 'r') {
+        e.preventDefault();
+        if (activeCellId) {
+          handleRunCell(activeCellId);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeCellId, handleRunCell]);
+
   const handleSyncCell = useCallback(
     async (cellId: string) => {
       const cell = notebook.cells.find((c) => c.id === cellId);
@@ -463,6 +543,64 @@ export function App() {
     }));
   }, []);
 
+  const handleExpandInstructions = useCallback(
+    async (cellId: string) => {
+      const cell = notebook.cells.find((c) => c.id === cellId);
+      if (!cell?.instructions?.text) return;
+
+      handleUpdate(cellId, { isSyncing: true });
+
+      try {
+        const result = await window.promptbook.ai.sync(cellId, 'expandInstructions', {
+          newContent: cell.instructions.text,
+        });
+
+        if (result.success && result.result) {
+          handleUpdate(cellId, {
+            instructions: { text: result.result, parameters: cell.instructions.parameters || [] },
+            isSyncing: false,
+          });
+        } else {
+          handleUpdate(cellId, { isSyncing: false });
+          if (result.error) setGlobalError(result.error);
+        }
+      } catch (error) {
+        handleUpdate(cellId, { isSyncing: false });
+        setGlobalError(String(error));
+      }
+    },
+    [notebook.cells, handleUpdate]
+  );
+
+  const handleShortenInstructions = useCallback(
+    async (cellId: string) => {
+      const cell = notebook.cells.find((c) => c.id === cellId);
+      if (!cell?.instructions?.text) return;
+
+      handleUpdate(cellId, { isSyncing: true });
+
+      try {
+        const result = await window.promptbook.ai.sync(cellId, 'shortenInstructions', {
+          newContent: cell.instructions.text,
+        });
+
+        if (result.success && result.result) {
+          handleUpdate(cellId, {
+            instructions: { text: result.result, parameters: cell.instructions.parameters || [] },
+            isSyncing: false,
+          });
+        } else {
+          handleUpdate(cellId, { isSyncing: false });
+          if (result.error) setGlobalError(result.error);
+        }
+      } catch (error) {
+        handleUpdate(cellId, { isSyncing: false });
+        setGlobalError(String(error));
+      }
+    },
+    [notebook.cells, handleUpdate]
+  );
+
   const handleOpen = async () => {
     const path = await window.promptbook.file.open();
     if (path) {
@@ -526,6 +664,10 @@ export function App() {
           onSyncCell={handleSyncCell}
           onAddCell={handleAddCell}
           onDeleteCell={handleDeleteCell}
+          onExpandInstructions={handleExpandInstructions}
+          onShortenInstructions={handleShortenInstructions}
+          activeCellId={activeCellId || undefined}
+          onCellFocus={setActiveCellId}
         />
       </main>
       <Settings

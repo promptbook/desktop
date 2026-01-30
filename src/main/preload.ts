@@ -78,4 +78,15 @@ contextBridge.exposeInMainWorld('promptbook', {
     load: () => ipcRenderer.invoke('settings:load'),
     save: (settings: unknown) => ipcRenderer.invoke('settings:save', settings),
   },
+  clipboard: {
+    read: () => ipcRenderer.invoke('clipboard:read'),
+    write: (text: string) => ipcRenderer.invoke('clipboard:write', text),
+    readHTML: () => ipcRenderer.invoke('clipboard:readHTML'),
+    writeHTML: (html: string) => ipcRenderer.invoke('clipboard:writeHTML', html),
+  },
+  spellcheck: {
+    getLanguages: () => ipcRenderer.invoke('spellcheck:getLanguages'),
+    setLanguages: (languages: string[]) => ipcRenderer.invoke('spellcheck:setLanguages', languages),
+    addWord: (word: string) => ipcRenderer.invoke('spellcheck:addWord', word),
+  },
 });

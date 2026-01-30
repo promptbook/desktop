@@ -1,13 +1,30 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, session, Menu, clipboard } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as yaml from 'yaml';
 import { KernelManager, PythonSetup, PythonEnvironment, KernelOutput } from './kernel';
 
-// Settings file path
-const getSettingsPath = () => path.join(app.getPath('userData'), 'settings.json');
+// Electron plugins
+import log from 'electron-log/main';
+import Store from 'electron-store';
+import windowStateKeeper from 'electron-window-state';
+import contextMenu from 'electron-context-menu';
 
-// Default settings
+// ============================================
+// Logging Setup
+// ============================================
+log.initialize();
+log.transports.file.level = 'info';
+log.transports.console.level = 'debug';
+
+// Replace console with electron-log
+Object.assign(console, log.functions);
+
+log.info('Promptbook starting...');
+
+// ============================================
+// Settings with electron-store
+// ============================================
 interface AppSettings {
   python: { selectedEnvironment?: string };
   ai: {
@@ -20,31 +37,43 @@ interface AppSettings {
     ollamaModel?: string;
   };
   kernel: { startupTimeout: number };
+  spellcheck: { enabled: boolean; languages: string[] };
 }
 
 const defaultSettings: AppSettings = {
   python: {},
   ai: { provider: 'agent' },
   kernel: { startupTimeout: 30000 },
+  spellcheck: { enabled: true, languages: ['en-US'] },
 };
 
-// Load settings
-async function loadSettings(): Promise<AppSettings> {
-  try {
-    const content = await fs.readFile(getSettingsPath(), 'utf-8');
-    return { ...defaultSettings, ...JSON.parse(content) };
-  } catch {
-    return defaultSettings;
-  }
+// Persistent store with electron-store
+const store = new Store<AppSettings>({
+  defaults: defaultSettings,
+  name: 'promptbook-settings',
+});
+
+// Get current settings
+function getSettings(): AppSettings {
+  return {
+    python: store.get('python', defaultSettings.python),
+    ai: store.get('ai', defaultSettings.ai),
+    kernel: store.get('kernel', defaultSettings.kernel),
+    spellcheck: store.get('spellcheck', defaultSettings.spellcheck),
+  };
 }
 
 // Save settings
-async function saveSettings(settings: AppSettings): Promise<void> {
-  await fs.writeFile(getSettingsPath(), JSON.stringify(settings, null, 2));
+function saveSettings(settings: AppSettings): void {
+  store.set('python', settings.python);
+  store.set('ai', settings.ai);
+  store.set('kernel', settings.kernel);
+  store.set('spellcheck', settings.spellcheck);
+  log.info('Settings saved');
 }
 
 // Current settings (cached)
-let currentSettings = defaultSettings;
+let currentSettings = getSettings();
 
 // Python environment management
 const pythonSetup = new PythonSetup();
@@ -58,17 +87,118 @@ async function scanEnvironments(): Promise<PythonEnvironment[]> {
 }
 
 let mainWindow: BrowserWindow | null = null;
+let mainWindowState: ReturnType<typeof windowStateKeeper> | null = null;
 
+// ============================================
+// Context Menu Setup
+// ============================================
+function setupContextMenu() {
+  contextMenu({
+    showSaveImageAs: true,
+    showCopyImage: true,
+    showCopyImageAddress: true,
+    showInspectElement: process.env.NODE_ENV === 'development',
+    showSearchWithGoogle: false,
+    prepend: (_defaultActions, parameters, browserWindow) => {
+      const menuItems: Electron.MenuItemConstructorOptions[] = [];
+
+      // Get webContents safely
+      const getWebContents = () => {
+        if (!browserWindow) return null;
+        if ('webContents' in browserWindow) {
+          return (browserWindow as BrowserWindow).webContents;
+        }
+        return null;
+      };
+
+      // Spell check suggestions
+      if (parameters.misspelledWord) {
+        menuItems.push({
+          label: `Add "${parameters.misspelledWord}" to dictionary`,
+          click: () => {
+            const webContents = getWebContents();
+            webContents?.session.addWordToSpellCheckerDictionary(parameters.misspelledWord);
+          },
+        });
+        menuItems.push({ type: 'separator' });
+
+        // Add suggestions
+        if (parameters.dictionarySuggestions.length > 0) {
+          parameters.dictionarySuggestions.slice(0, 5).forEach((suggestion) => {
+            menuItems.push({
+              label: suggestion,
+              click: () => {
+                const webContents = getWebContents();
+                webContents?.replaceMisspelling(suggestion);
+              },
+            });
+          });
+          menuItems.push({ type: 'separator' });
+        }
+      }
+
+      return menuItems;
+    },
+    labels: {
+      copy: 'Copy',
+      paste: 'Paste',
+      cut: 'Cut',
+      selectAll: 'Select All',
+      copyLink: 'Copy Link',
+      copyImage: 'Copy Image',
+      saveImageAs: 'Save Image As...',
+      inspect: 'Inspect Element',
+    },
+  });
+
+  log.info('Context menu initialized');
+}
+
+// ============================================
+// Spell Checker Setup
+// ============================================
+function setupSpellChecker() {
+  const ses = session.defaultSession;
+  const spellcheckSettings = currentSettings.spellcheck;
+
+  if (spellcheckSettings.enabled) {
+    ses.setSpellCheckerLanguages(spellcheckSettings.languages);
+    log.info('Spell checker enabled with languages:', spellcheckSettings.languages);
+  }
+}
+
+// ============================================
+// Window Creation
+// ============================================
 function createWindow() {
+  // Remember window size and position
+  mainWindowState = windowStateKeeper({
+    defaultWidth: 1200,
+    defaultHeight: 800,
+  });
+
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    x: mainWindowState.x,
+    y: mainWindowState.y,
+    width: mainWindowState.width,
+    height: mainWindowState.height,
+    minWidth: 800,
+    minHeight: 600,
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 16 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      spellcheck: currentSettings.spellcheck.enabled,
     },
   });
+
+  // Track window state
+  mainWindowState.manage(mainWindow);
+
+  // Set up spell checker
+  setupSpellChecker();
 
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://localhost:5173');
@@ -80,6 +210,8 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  log.info('Main window created');
 }
 
 // Forward kernel events to renderer
@@ -100,11 +232,19 @@ function setupKernelEventForwarding(): void {
 }
 
 app.whenReady().then(async () => {
-  currentSettings = await loadSettings();
+  log.info('App ready');
+
+  // Load settings from store
+  currentSettings = getSettings();
+
+  // Set up context menu globally
+  setupContextMenu();
+
+  // Create main window
   createWindow();
 
   // Scan for environments in background
-  scanEnvironments().catch(console.error);
+  scanEnvironments().catch((err) => log.error('Failed to scan environments:', err));
 
   // If we have a previously selected environment, try to start the kernel
   if (currentSettings.python.selectedEnvironment) {
@@ -117,8 +257,9 @@ app.whenReady().then(async () => {
         setupKernelEventForwarding();
         await kernelManager.start();
         mainWindow?.webContents.send('kernel:stateChange', kernelManager.getState());
+        log.info('Kernel started with environment:', env.name);
       } catch (err) {
-        console.error('Failed to start kernel:', err);
+        log.error('Failed to start kernel:', err);
       }
     }
   }
@@ -274,6 +415,29 @@ interface AiSyncContext {
 // Build smart prompt based on context
 function buildSyncPrompt(direction: string, context: AiSyncContext): string {
   const { newContent, previousContent, existingCounterpart } = context;
+
+  // Handle expand/shorten instructions
+  if (direction === 'expandInstructions') {
+    return `Expand these instructions with more detail while keeping the same meaning.
+Keep parameters in {{name:value}} format. Add context about what each step does.
+
+Current instructions:
+${newContent}
+
+Return ONLY the expanded instructions, no code or markdown.`;
+  }
+
+  if (direction === 'shortenInstructions') {
+    return `Make these instructions more concise (1 short sentence preferred).
+Keep parameters in {{name:value}} format. Remove unnecessary words.
+Don't mention "Python" or "code" - it's obvious.
+Use action words: "Generate", "Calculate", "Plot", etc.
+
+Current instructions:
+${newContent}
+
+Return ONLY the shortened instructions, no code or markdown.`;
+  }
   const hasExistingCode = direction === 'toCode' && existingCounterpart?.trim();
   const hasExistingInstructions = direction === 'toInstructions' && existingCounterpart?.trim();
   const hasChanges = previousContent && previousContent !== newContent;
@@ -323,6 +487,16 @@ ${newContent}`;
     }
   } else {
     // toInstructions
+    const conciseGuidelines = `
+IMPORTANT GUIDELINES FOR INSTRUCTIONS:
+- Be EXTREMELY concise (1 short sentence preferred)
+- Don't mention "Python" or "code" - it's obvious
+- Use action words: "Generate", "Calculate", "Plot", "Load", etc.
+- Include key parameters as {{parameter_name:value}} placeholders
+- Example: "Generate the first {{count:10}} Fibonacci numbers starting at {{start:0}}"
+- Example: "Plot {{metric:temperature}} over {{period:last 7 days}}"
+- Example: "Calculate {{operation:sum}} of {{numbers:1, 2, 3, 4, 5}}"`;
+
     if (hasExistingInstructions && hasChanges) {
       // Code changed, update existing instructions
       return `You are updating instructions based on changed code.
@@ -339,13 +513,14 @@ ${newContent}
 
 CURRENT INSTRUCTIONS:
 ${existingCounterpart}
+${conciseGuidelines}
 
-Update the instructions to accurately describe what the new code does. Make MINIMAL changes - only modify what's necessary to reflect the code changes.
+Update the instructions to accurately describe what the new code does. Make MINIMAL changes.
 
 Return ONLY the updated instructions, no code or markdown.`;
     } else if (hasExistingInstructions) {
       // Existing instructions as reference
-      return `You are generating instructions for Python code. There are existing instructions that may be relevant.
+      return `You are generating instructions for code. There are existing instructions that may be relevant.
 
 CODE:
 \`\`\`python
@@ -354,20 +529,20 @@ ${newContent}
 
 EXISTING INSTRUCTIONS (use as reference for style):
 ${existingCounterpart}
-
-Describe what the code does in clear, concise instructions. If the existing instructions are close to accurate, make minimal modifications.
+${conciseGuidelines}
 
 Return ONLY the instructions, no code or markdown.`;
     } else {
       // Fresh generation
-      return `Describe what this Python code does in clear, concise instructions.
-
-Return ONLY the description, no code or markdown.
+      return `Describe what this code does in a concise instruction.
+${conciseGuidelines}
 
 CODE:
 \`\`\`python
 ${newContent}
-\`\`\``;
+\`\`\`
+
+Return ONLY the instruction, no code or markdown.`;
     }
   }
 }
@@ -493,7 +668,53 @@ ipcMain.handle('settings:load', async () => {
 
 ipcMain.handle('settings:save', async (_event, settings: AppSettings) => {
   currentSettings = settings;
-  await saveSettings(settings);
+  saveSettings(settings);
+
+  // Update spell checker if settings changed
+  if (mainWindow) {
+    const ses = session.defaultSession;
+    if (settings.spellcheck?.enabled) {
+      ses.setSpellCheckerLanguages(settings.spellcheck.languages);
+    }
+  }
+
+  return { success: true };
+});
+
+// Clipboard handlers
+ipcMain.handle('clipboard:read', () => {
+  return clipboard.readText();
+});
+
+ipcMain.handle('clipboard:write', (_event, text: string) => {
+  clipboard.writeText(text);
+  return { success: true };
+});
+
+ipcMain.handle('clipboard:readHTML', () => {
+  return clipboard.readHTML();
+});
+
+ipcMain.handle('clipboard:writeHTML', (_event, html: string) => {
+  clipboard.writeHTML(html);
+  return { success: true };
+});
+
+// Spell checker handlers
+ipcMain.handle('spellcheck:getLanguages', () => {
+  return session.defaultSession.getSpellCheckerLanguages();
+});
+
+ipcMain.handle('spellcheck:setLanguages', (_event, languages: string[]) => {
+  session.defaultSession.setSpellCheckerLanguages(languages);
+  currentSettings.spellcheck.languages = languages;
+  saveSettings(currentSettings);
+  return { success: true };
+});
+
+ipcMain.handle('spellcheck:addWord', (_event, word: string) => {
+  session.defaultSession.addWordToSpellCheckerDictionary(word);
+  log.info('Added word to dictionary:', word);
   return { success: true };
 });
 
