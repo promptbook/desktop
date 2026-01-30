@@ -306,11 +306,38 @@ const Icons = {
   ),
 };
 
-export function App() {
+// Props for integration with project management (Electron only)
+// When used standalone (VS Code), these props are not provided
+interface AppProps {
+  projectId?: string;
+  filePath?: string;
+  onOpenSettings?: () => void;
+}
+
+export function App({ projectId, filePath: initialFilePath, onOpenSettings }: AppProps = {}) {
   const [notebook, setNotebook] = useState<NotebookState>(createEmptyNotebook());
-  const [filePath, setFilePath] = useState<string | null>(null);
+  const [filePath, setFilePath] = useState<string | null>(initialFilePath || null);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Load file when filePath prop changes (project mode)
+  useEffect(() => {
+    if (projectId && initialFilePath && initialFilePath !== filePath) {
+      // Load file from project
+      window.promptbook.project.readFile(projectId, initialFilePath).then((result) => {
+        if (result.success && result.content) {
+          try {
+            const parsed = JSON.parse(result.content);
+            setNotebook(parsed);
+            setFilePath(initialFilePath);
+          } catch {
+            // Try YAML parsing (the backend already handles this)
+            setFilePath(initialFilePath);
+          }
+        }
+      });
+    }
+  }, [projectId, initialFilePath]);
 
   // Kernel state
   const [kernelState, setKernelState] = useState<KernelState>('disconnected');

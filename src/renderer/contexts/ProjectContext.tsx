@@ -1,0 +1,361 @@
+import React, { createContext, useContext, useReducer, useEffect, useCallback, ReactNode } from 'react';
+
+// Types (matching main process types)
+export interface Project {
+  id: string;
+  name: string;
+  path: string;
+  created: string;
+  lastOpened: string;
+  color?: string;
+  icon?: string;
+}
+
+export interface ProjectSettings {
+  projectsRootPath: string;
+  lastOpenedProjectId: string | null;
+  recentProjects: string[];
+}
+
+export interface FileEntry {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  absolutePath: string;
+}
+
+// State
+interface ProjectState {
+  projects: Project[];
+  recentProjects: Project[];
+  currentProject: Project | null;
+  settings: ProjectSettings | null;
+  isLoading: boolean;
+  error: string | null;
+}
+
+// Actions
+type ProjectAction =
+  | { type: 'SET_LOADING'; payload: boolean }
+  | { type: 'SET_ERROR'; payload: string | null }
+  | { type: 'SET_PROJECTS'; payload: Project[] }
+  | { type: 'SET_RECENT_PROJECTS'; payload: Project[] }
+  | { type: 'SET_CURRENT_PROJECT'; payload: Project | null }
+  | { type: 'SET_SETTINGS'; payload: ProjectSettings }
+  | { type: 'ADD_PROJECT'; payload: Project }
+  | { type: 'UPDATE_PROJECT'; payload: Project }
+  | { type: 'REMOVE_PROJECT'; payload: string };
+
+// Reducer
+function projectReducer(state: ProjectState, action: ProjectAction): ProjectState {
+  switch (action.type) {
+    case 'SET_LOADING':
+      return { ...state, isLoading: action.payload };
+    case 'SET_ERROR':
+      return { ...state, error: action.payload };
+    case 'SET_PROJECTS':
+      return { ...state, projects: action.payload };
+    case 'SET_RECENT_PROJECTS':
+      return { ...state, recentProjects: action.payload };
+    case 'SET_CURRENT_PROJECT':
+      return { ...state, currentProject: action.payload };
+    case 'SET_SETTINGS':
+      return { ...state, settings: action.payload };
+    case 'ADD_PROJECT':
+      return { ...state, projects: [...state.projects, action.payload] };
+    case 'UPDATE_PROJECT':
+      return {
+        ...state,
+        projects: state.projects.map(p => p.id === action.payload.id ? action.payload : p),
+        currentProject: state.currentProject?.id === action.payload.id ? action.payload : state.currentProject,
+      };
+    case 'REMOVE_PROJECT':
+      return {
+        ...state,
+        projects: state.projects.filter(p => p.id !== action.payload),
+        currentProject: state.currentProject?.id === action.payload ? null : state.currentProject,
+      };
+    default:
+      return state;
+  }
+}
+
+// Initial state
+const initialState: ProjectState = {
+  projects: [],
+  recentProjects: [],
+  currentProject: null,
+  settings: null,
+  isLoading: true,
+  error: null,
+};
+
+// Context type
+interface ProjectContextType {
+  state: ProjectState;
+  // Project operations
+  loadProjects: () => Promise<void>;
+  createProject: (name: string, customPath?: string) => Promise<Project | null>;
+  openProject: (projectId: string) => Promise<Project | null>;
+  updateProject: (projectId: string, updates: Partial<Omit<Project, 'id'>>) => Promise<Project | null>;
+  deleteProject: (projectId: string, deleteFiles?: boolean) => Promise<boolean>;
+  closeProject: () => void;
+  // Settings
+  updateSettings: (updates: { projectsRootPath?: string }) => Promise<void>;
+  // File operations (within current project)
+  listFiles: (relativePath?: string) => Promise<FileEntry[]>;
+  createFile: (relativePath: string, content?: string) => Promise<boolean>;
+  createFolder: (relativePath: string) => Promise<boolean>;
+  deleteFile: (relativePath: string) => Promise<boolean>;
+  renameFile: (oldPath: string, newPath: string) => Promise<boolean>;
+  readFile: (relativePath: string) => Promise<string | null>;
+  writeFile: (relativePath: string, content: string) => Promise<boolean>;
+}
+
+// Create context
+const ProjectContext = createContext<ProjectContextType | null>(null);
+
+// Provider
+interface ProjectProviderProps {
+  children: ReactNode;
+}
+
+export function ProjectProvider({ children }: ProjectProviderProps) {
+  const [state, dispatch] = useReducer(projectReducer, initialState);
+
+  // Load projects and settings on mount
+  useEffect(() => {
+    loadProjects();
+    loadSettings();
+  }, []);
+
+  const loadSettings = useCallback(async () => {
+    try {
+      const result = await window.promptbook.project.getSettings();
+      if (result.success && result.settings) {
+        dispatch({ type: 'SET_SETTINGS', payload: result.settings });
+      }
+    } catch (err) {
+      console.error('Failed to load project settings:', err);
+    }
+  }, []);
+
+  const loadProjects = useCallback(async () => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    try {
+      const [listResult, recentResult] = await Promise.all([
+        window.promptbook.project.list(),
+        window.promptbook.project.getRecent(10),
+      ]);
+
+      if (listResult.success) {
+        dispatch({ type: 'SET_PROJECTS', payload: listResult.projects });
+      }
+      if (recentResult.success) {
+        dispatch({ type: 'SET_RECENT_PROJECTS', payload: recentResult.projects });
+      }
+    } catch (err) {
+      dispatch({ type: 'SET_ERROR', payload: String(err) });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  }, []);
+
+  const createProject = useCallback(async (name: string, customPath?: string): Promise<Project | null> => {
+    try {
+      const result = await window.promptbook.project.create(name, customPath);
+      if (result.success && result.project) {
+        dispatch({ type: 'ADD_PROJECT', payload: result.project });
+        dispatch({ type: 'SET_CURRENT_PROJECT', payload: result.project });
+        return result.project;
+      }
+      dispatch({ type: 'SET_ERROR', payload: result.error || 'Failed to create project' });
+      return null;
+    } catch (err) {
+      dispatch({ type: 'SET_ERROR', payload: String(err) });
+      return null;
+    }
+  }, []);
+
+  const openProject = useCallback(async (projectId: string): Promise<Project | null> => {
+    try {
+      const result = await window.promptbook.project.open(projectId);
+      if (result.success && result.project) {
+        dispatch({ type: 'SET_CURRENT_PROJECT', payload: result.project });
+        dispatch({ type: 'UPDATE_PROJECT', payload: result.project });
+        // Refresh recent projects
+        const recentResult = await window.promptbook.project.getRecent(10);
+        if (recentResult.success) {
+          dispatch({ type: 'SET_RECENT_PROJECTS', payload: recentResult.projects });
+        }
+        return result.project;
+      }
+      dispatch({ type: 'SET_ERROR', payload: result.error || 'Failed to open project' });
+      return null;
+    } catch (err) {
+      dispatch({ type: 'SET_ERROR', payload: String(err) });
+      return null;
+    }
+  }, []);
+
+  const updateProject = useCallback(async (projectId: string, updates: Partial<Omit<Project, 'id'>>): Promise<Project | null> => {
+    try {
+      const result = await window.promptbook.project.update(projectId, updates);
+      if (result.success && result.project) {
+        dispatch({ type: 'UPDATE_PROJECT', payload: result.project });
+        return result.project;
+      }
+      dispatch({ type: 'SET_ERROR', payload: result.error || 'Failed to update project' });
+      return null;
+    } catch (err) {
+      dispatch({ type: 'SET_ERROR', payload: String(err) });
+      return null;
+    }
+  }, []);
+
+  const deleteProject = useCallback(async (projectId: string, deleteFiles: boolean = false): Promise<boolean> => {
+    try {
+      const result = await window.promptbook.project.delete(projectId, deleteFiles);
+      if (result.success) {
+        dispatch({ type: 'REMOVE_PROJECT', payload: projectId });
+        // Refresh recent projects
+        const recentResult = await window.promptbook.project.getRecent(10);
+        if (recentResult.success) {
+          dispatch({ type: 'SET_RECENT_PROJECTS', payload: recentResult.projects });
+        }
+        return true;
+      }
+      dispatch({ type: 'SET_ERROR', payload: result.error || 'Failed to delete project' });
+      return false;
+    } catch (err) {
+      dispatch({ type: 'SET_ERROR', payload: String(err) });
+      return false;
+    }
+  }, []);
+
+  const closeProject = useCallback(() => {
+    dispatch({ type: 'SET_CURRENT_PROJECT', payload: null });
+  }, []);
+
+  const updateSettings = useCallback(async (updates: { projectsRootPath?: string }) => {
+    try {
+      const result = await window.promptbook.project.updateSettings(updates);
+      if (result.success && result.settings) {
+        dispatch({ type: 'SET_SETTINGS', payload: result.settings });
+      }
+    } catch (err) {
+      dispatch({ type: 'SET_ERROR', payload: String(err) });
+    }
+  }, []);
+
+  // File operations (require current project)
+  const listFiles = useCallback(async (relativePath?: string): Promise<FileEntry[]> => {
+    if (!state.currentProject) return [];
+    try {
+      const result = await window.promptbook.project.listFiles(state.currentProject.id, relativePath);
+      return result.success ? result.files : [];
+    } catch (err) {
+      console.error('Failed to list files:', err);
+      return [];
+    }
+  }, [state.currentProject]);
+
+  const createFile = useCallback(async (relativePath: string, content?: string): Promise<boolean> => {
+    if (!state.currentProject) return false;
+    try {
+      const result = await window.promptbook.project.createFile(state.currentProject.id, relativePath, content);
+      return result.success;
+    } catch (err) {
+      console.error('Failed to create file:', err);
+      return false;
+    }
+  }, [state.currentProject]);
+
+  const createFolder = useCallback(async (relativePath: string): Promise<boolean> => {
+    if (!state.currentProject) return false;
+    try {
+      const result = await window.promptbook.project.createFolder(state.currentProject.id, relativePath);
+      return result.success;
+    } catch (err) {
+      console.error('Failed to create folder:', err);
+      return false;
+    }
+  }, [state.currentProject]);
+
+  const deleteFile = useCallback(async (relativePath: string): Promise<boolean> => {
+    if (!state.currentProject) return false;
+    try {
+      const result = await window.promptbook.project.deleteFile(state.currentProject.id, relativePath);
+      return result.success;
+    } catch (err) {
+      console.error('Failed to delete file:', err);
+      return false;
+    }
+  }, [state.currentProject]);
+
+  const renameFile = useCallback(async (oldPath: string, newPath: string): Promise<boolean> => {
+    if (!state.currentProject) return false;
+    try {
+      const result = await window.promptbook.project.renameFile(state.currentProject.id, oldPath, newPath);
+      return result.success;
+    } catch (err) {
+      console.error('Failed to rename file:', err);
+      return false;
+    }
+  }, [state.currentProject]);
+
+  const readFile = useCallback(async (relativePath: string): Promise<string | null> => {
+    if (!state.currentProject) return null;
+    try {
+      const result = await window.promptbook.project.readFile(state.currentProject.id, relativePath);
+      return result.success ? result.content : null;
+    } catch (err) {
+      console.error('Failed to read file:', err);
+      return null;
+    }
+  }, [state.currentProject]);
+
+  const writeFile = useCallback(async (relativePath: string, content: string): Promise<boolean> => {
+    if (!state.currentProject) return false;
+    try {
+      const result = await window.promptbook.project.writeFile(state.currentProject.id, relativePath, content);
+      return result.success;
+    } catch (err) {
+      console.error('Failed to write file:', err);
+      return false;
+    }
+  }, [state.currentProject]);
+
+  const value: ProjectContextType = {
+    state,
+    loadProjects,
+    createProject,
+    openProject,
+    updateProject,
+    deleteProject,
+    closeProject,
+    updateSettings,
+    listFiles,
+    createFile,
+    createFolder,
+    deleteFile,
+    renameFile,
+    readFile,
+    writeFile,
+  };
+
+  return (
+    <ProjectContext.Provider value={value}>
+      {children}
+    </ProjectContext.Provider>
+  );
+}
+
+// Hook
+export function useProject(): ProjectContextType {
+  const context = useContext(ProjectContext);
+  if (!context) {
+    throw new Error('useProject must be used within a ProjectProvider');
+  }
+  return context;
+}

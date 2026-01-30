@@ -10,6 +10,8 @@ import {
 } from '@promptbook/core/kernel';
 import { buildSyncPrompt, type AiSyncContext } from '@promptbook/core/sync';
 import { versionManager } from './kernel/VersionManager';
+import { projectService, type Project, type FileEntry } from './services/ProjectService';
+import { sessionService, type SessionState, type TabState, type SidebarState } from './services/SessionService';
 
 // Electron plugins
 import log from 'electron-log/main';
@@ -873,6 +875,260 @@ ipcMain.handle('version:getVersion', async (_event, notebookId: string, hash: st
       return { success: true, content };
     }
     return { success: false, error: 'Version not found' };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+// ============================================
+// Project Management IPC Handlers
+// ============================================
+
+ipcMain.handle('project:getSettings', async () => {
+  return { success: true, settings: projectService.getSettings() };
+});
+
+ipcMain.handle('project:updateSettings', async (_event, updates: { projectsRootPath?: string }) => {
+  try {
+    const settings = projectService.updateSettings(updates);
+    return { success: true, settings };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('project:list', async () => {
+  try {
+    const projects = projectService.getAllProjects();
+    return { success: true, projects };
+  } catch (err) {
+    return { success: false, error: String(err), projects: [] };
+  }
+});
+
+ipcMain.handle('project:getRecent', async (_event, limit?: number) => {
+  try {
+    const projects = projectService.getRecentProjects(limit);
+    return { success: true, projects };
+  } catch (err) {
+    return { success: false, error: String(err), projects: [] };
+  }
+});
+
+ipcMain.handle('project:create', async (_event, name: string, customPath?: string) => {
+  try {
+    const project = await projectService.createProject(name, customPath);
+    return { success: true, project };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('project:open', async (_event, projectId: string) => {
+  try {
+    const project = await projectService.openProject(projectId);
+    if (!project) {
+      return { success: false, error: 'Project not found' };
+    }
+    return { success: true, project };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('project:update', async (_event, projectId: string, updates: Partial<Omit<Project, 'id'>>) => {
+  try {
+    const project = await projectService.updateProject(projectId, updates);
+    if (!project) {
+      return { success: false, error: 'Project not found' };
+    }
+    return { success: true, project };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('project:delete', async (_event, projectId: string, deleteFiles: boolean = false) => {
+  try {
+    const success = await projectService.deleteProject(projectId, deleteFiles);
+    // Also clear the session for this project
+    sessionService.clearSession(projectId);
+    return { success };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('project:listFiles', async (_event, projectId: string, relativePath?: string) => {
+  try {
+    const files = await projectService.listFiles(projectId, relativePath);
+    return { success: true, files };
+  } catch (err) {
+    return { success: false, error: String(err), files: [] };
+  }
+});
+
+ipcMain.handle('project:createFile', async (_event, projectId: string, relativePath: string, content?: string) => {
+  try {
+    await projectService.createFile(projectId, relativePath, content);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('project:createFolder', async (_event, projectId: string, relativePath: string) => {
+  try {
+    await projectService.createFolder(projectId, relativePath);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('project:deleteFile', async (_event, projectId: string, relativePath: string) => {
+  try {
+    await projectService.deleteFile(projectId, relativePath);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('project:renameFile', async (_event, projectId: string, oldPath: string, newPath: string) => {
+  try {
+    await projectService.renameFile(projectId, oldPath, newPath);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('project:readFile', async (_event, projectId: string, relativePath: string) => {
+  try {
+    const content = await projectService.readFile(projectId, relativePath);
+    return { success: true, content };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('project:writeFile', async (_event, projectId: string, relativePath: string, content: string) => {
+  try {
+    await projectService.writeFile(projectId, relativePath, content);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+// ============================================
+// Session Management IPC Handlers
+// ============================================
+
+ipcMain.handle('session:load', async (_event, projectId: string) => {
+  try {
+    const session = sessionService.loadSession(projectId);
+    return { success: true, session };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('session:save', async (_event, session: SessionState) => {
+  try {
+    sessionService.saveSession(session);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('session:addTab', async (_event, projectId: string, tab: TabState) => {
+  try {
+    const session = sessionService.addTab(projectId, tab);
+    return { success: true, session };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('session:removeTab', async (_event, projectId: string, tabId: string) => {
+  try {
+    const session = sessionService.removeTab(projectId, tabId);
+    return { success: true, session };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('session:setActiveTab', async (_event, projectId: string, tabId: string) => {
+  try {
+    const session = sessionService.setActiveTab(projectId, tabId);
+    return { success: true, session };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('session:updateTab', async (_event, projectId: string, tabId: string, updates: Partial<Omit<TabState, 'id'>>) => {
+  try {
+    const session = sessionService.updateTab(projectId, tabId, updates);
+    return { success: true, session };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('session:reorderTabs', async (_event, projectId: string, fromIndex: number, toIndex: number) => {
+  try {
+    const session = sessionService.reorderTabs(projectId, fromIndex, toIndex);
+    return { success: true, session };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('session:updateSidebar', async (_event, projectId: string, updates: Partial<SidebarState>) => {
+  try {
+    const session = sessionService.updateSidebar(projectId, updates);
+    return { success: true, session };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('session:toggleSidebar', async (_event, projectId: string) => {
+  try {
+    const session = sessionService.toggleSidebar(projectId);
+    return { success: true, session };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('session:pinSidebar', async (_event, projectId: string, pinned: boolean) => {
+  try {
+    const session = sessionService.pinSidebar(projectId, pinned);
+    return { success: true, session };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('session:resizeSidebar', async (_event, projectId: string, width: number) => {
+  try {
+    const session = sessionService.resizeSidebar(projectId, width);
+    return { success: true, session };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('session:cleanupDeletedFiles', async (_event, projectId: string, existingFiles: string[]) => {
+  try {
+    const session = sessionService.cleanupDeletedFiles(projectId, existingFiles);
+    return { success: true, session };
   } catch (err) {
     return { success: false, error: String(err) };
   }

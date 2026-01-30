@@ -18,6 +18,50 @@ export interface PythonEnvironment {
 
 export type KernelState = 'idle' | 'busy' | 'starting' | 'dead' | 'disconnected';
 
+// Types for project management
+export interface Project {
+  id: string;
+  name: string;
+  path: string;
+  created: string;
+  lastOpened: string;
+  color?: string;
+  icon?: string;
+}
+
+export interface ProjectSettings {
+  projectsRootPath: string;
+  lastOpenedProjectId: string | null;
+  recentProjects: string[];
+}
+
+export interface FileEntry {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  absolutePath: string;
+}
+
+export interface TabState {
+  id: string;
+  filePath: string;
+  scrollPosition: number;
+  activeCellId: string | null;
+}
+
+export interface SidebarState {
+  isVisible: boolean;
+  isPinned: boolean;
+  width: number;
+}
+
+export interface SessionState {
+  projectId: string;
+  openTabs: TabState[];
+  activeTabId: string | null;
+  sidebar: SidebarState;
+}
+
 contextBridge.exposeInMainWorld('promptbook', {
   kernel: {
     // Environment management
@@ -103,5 +147,57 @@ contextBridge.exposeInMainWorld('promptbook', {
       ipcRenderer.invoke('version:canUndo', notebookId),
     getVersion: (notebookId: string, hash: string) =>
       ipcRenderer.invoke('version:getVersion', notebookId, hash),
+  },
+  project: {
+    getSettings: () => ipcRenderer.invoke('project:getSettings'),
+    updateSettings: (updates: { projectsRootPath?: string }) =>
+      ipcRenderer.invoke('project:updateSettings', updates),
+    list: () => ipcRenderer.invoke('project:list'),
+    getRecent: (limit?: number) => ipcRenderer.invoke('project:getRecent', limit),
+    create: (name: string, customPath?: string) =>
+      ipcRenderer.invoke('project:create', name, customPath),
+    open: (projectId: string) => ipcRenderer.invoke('project:open', projectId),
+    update: (projectId: string, updates: Partial<Omit<Project, 'id'>>) =>
+      ipcRenderer.invoke('project:update', projectId, updates),
+    delete: (projectId: string, deleteFiles?: boolean) =>
+      ipcRenderer.invoke('project:delete', projectId, deleteFiles),
+    listFiles: (projectId: string, relativePath?: string) =>
+      ipcRenderer.invoke('project:listFiles', projectId, relativePath),
+    createFile: (projectId: string, relativePath: string, content?: string) =>
+      ipcRenderer.invoke('project:createFile', projectId, relativePath, content),
+    createFolder: (projectId: string, relativePath: string) =>
+      ipcRenderer.invoke('project:createFolder', projectId, relativePath),
+    deleteFile: (projectId: string, relativePath: string) =>
+      ipcRenderer.invoke('project:deleteFile', projectId, relativePath),
+    renameFile: (projectId: string, oldPath: string, newPath: string) =>
+      ipcRenderer.invoke('project:renameFile', projectId, oldPath, newPath),
+    readFile: (projectId: string, relativePath: string) =>
+      ipcRenderer.invoke('project:readFile', projectId, relativePath),
+    writeFile: (projectId: string, relativePath: string, content: string) =>
+      ipcRenderer.invoke('project:writeFile', projectId, relativePath, content),
+  },
+  session: {
+    load: (projectId: string) => ipcRenderer.invoke('session:load', projectId),
+    save: (session: SessionState) => ipcRenderer.invoke('session:save', session),
+    addTab: (projectId: string, tab: TabState) =>
+      ipcRenderer.invoke('session:addTab', projectId, tab),
+    removeTab: (projectId: string, tabId: string) =>
+      ipcRenderer.invoke('session:removeTab', projectId, tabId),
+    setActiveTab: (projectId: string, tabId: string) =>
+      ipcRenderer.invoke('session:setActiveTab', projectId, tabId),
+    updateTab: (projectId: string, tabId: string, updates: Partial<Omit<TabState, 'id'>>) =>
+      ipcRenderer.invoke('session:updateTab', projectId, tabId, updates),
+    reorderTabs: (projectId: string, fromIndex: number, toIndex: number) =>
+      ipcRenderer.invoke('session:reorderTabs', projectId, fromIndex, toIndex),
+    updateSidebar: (projectId: string, updates: Partial<SidebarState>) =>
+      ipcRenderer.invoke('session:updateSidebar', projectId, updates),
+    toggleSidebar: (projectId: string) =>
+      ipcRenderer.invoke('session:toggleSidebar', projectId),
+    pinSidebar: (projectId: string, pinned: boolean) =>
+      ipcRenderer.invoke('session:pinSidebar', projectId, pinned),
+    resizeSidebar: (projectId: string, width: number) =>
+      ipcRenderer.invoke('session:resizeSidebar', projectId, width),
+    cleanupDeletedFiles: (projectId: string, existingFiles: string[]) =>
+      ipcRenderer.invoke('session:cleanupDeletedFiles', projectId, existingFiles),
   },
 });

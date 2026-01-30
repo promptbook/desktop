@@ -1,0 +1,22 @@
+/* AppWrapper Styles */
+
+.app-wrapper {
+  display: flex;
+  height: 100vh;
+  background: var(--color-bg-primary, #1a1a2e);
+  color: var(--color-text-primary, #e8e8e8);
+}
+
+.app-wrapper__main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.app-wrapper__content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
