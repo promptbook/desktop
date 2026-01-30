@@ -372,46 +372,20 @@ ${newContent}
   }
 }
 
-// JSON schema for structured output
-const codeOutputSchema = {
-  type: 'object',
-  properties: {
-    code: {
-      type: 'string',
-      description: 'The Python code without any markdown formatting or code blocks',
-    },
-  },
-  required: ['code'],
-  additionalProperties: false,
-};
-
-const instructionsOutputSchema = {
-  type: 'object',
-  properties: {
-    instructions: {
-      type: 'string',
-      description: 'Clear, concise instructions describing what the code does',
-    },
-  },
-  required: ['instructions'],
-  additionalProperties: false,
-};
-
-// AI handlers
+// AI handlers - matching Wonderland's simple approach
 async function aiSyncWithAgent(direction: string, context: AiSyncContext): Promise<{ success: boolean; result?: string; error?: string }> {
   try {
     const { query } = await dynamicImport('@anthropic-ai/claude-agent-sdk');
 
     const prompt = buildSyncPrompt(direction, context);
-    console.log('[AI Sync] Starting query with prompt length:', prompt.length);
+    console.log('[AI Sync] Starting query');
 
-    const outputSchema = direction === 'toCode' ? codeOutputSchema : instructionsOutputSchema;
+    let result = '';
 
-    const q = query({
+    // Use the Claude Agent SDK query function - same as Wonderland
+    for await (const message of query({
       prompt,
       options: {
-        // Use Sonnet 4.5
-        model: 'sonnet',
         // No tools needed - just text generation
         tools: [],
         // Bypass permissions since we're not using any tools
@@ -420,54 +394,17 @@ async function aiSyncWithAgent(direction: string, context: AiSyncContext): Promi
         maxTurns: 1,
         // Don't persist the session
         persistSession: false,
-        // Force structured JSON output
-        outputFormat: {
-          type: 'json_schema',
-          schema: outputSchema,
-        },
-        // Pass Bedrock environment variables explicitly
+        // Pass Bedrock environment variables
         env: {
           ...process.env,
           CLAUDE_CODE_USE_BEDROCK: '1',
           AWS_REGION: process.env.AWS_REGION || 'us-east-1',
         },
       },
-    });
-
-    let result = '';
-
-    for await (const message of q) {
-      console.log('[AI Sync] Received message type:', message.type);
-
-      // Collect the result from result messages
+    })) {
+      // Collect the result text from result messages (same as Wonderland)
       if (message.type === 'result') {
-        const resultMsg = message as {
-          type: 'result';
-          result?: string;
-          subtype?: string;
-          is_error?: boolean;
-          error?: string;
-          structured_output?: { code?: string; instructions?: string };
-        };
-
-        if (resultMsg.is_error) {
-          console.error('[AI Sync] Result error:', resultMsg.error || resultMsg.result);
-          return { success: false, error: resultMsg.error || resultMsg.result || 'Unknown error' };
-        }
-
-        // Extract from structured output if available
-        if (resultMsg.structured_output) {
-          if (direction === 'toCode' && resultMsg.structured_output.code) {
-            result = resultMsg.structured_output.code;
-          } else if (direction === 'toInstructions' && resultMsg.structured_output.instructions) {
-            result = resultMsg.structured_output.instructions;
-          }
-        }
-
-        // Fallback to result string if structured output not available
-        if (!result && resultMsg.result) {
-          result = resultMsg.result;
-        }
+        result = (message as { type: 'result'; result: string }).result;
       }
     }
 
@@ -475,10 +412,13 @@ async function aiSyncWithAgent(direction: string, context: AiSyncContext): Promi
       return { success: false, error: 'No response generated' };
     }
 
-    // Clean up markdown code blocks if still present (fallback)
+    // Clean up markdown code blocks (same as Wonderland)
     if (direction === 'toCode') {
-      result = result.replace(/^```python\n?/i, '').replace(/\n?```$/i, '');
-      result = result.replace(/^```\n?/, '').replace(/\n?```$/i, '');
+      // Handle ```python and ``` blocks
+      const codeMatch = result.match(/```(?:python)?\s*([\s\S]*?)```/);
+      if (codeMatch) {
+        result = codeMatch[1];
+      }
     }
 
     return { success: true, result: result.trim() };
