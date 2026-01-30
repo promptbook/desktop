@@ -104,6 +104,12 @@ declare global {
         save: (path: string, notebook: NotebookState) => Promise<{ success: boolean }>;
         saveAs: (notebook: NotebookState) => Promise<{ success: boolean; filePath: string | null }>;
         exportPython: (notebook: NotebookState) => Promise<{ success: boolean; filePath: string | null }>;
+        listDir: (dirPath?: string) => Promise<{
+          success: boolean;
+          files: { name: string; isDirectory: boolean; path: string }[];
+          cwd: string;
+          error?: string;
+        }>;
       };
       settings: {
         load: () => Promise<AppSettings>;
@@ -952,6 +958,22 @@ export function App() {
     }));
   }, []);
 
+  // List files for @ autocomplete
+  const listFiles = useCallback(async (dirPath?: string) => {
+    const result = await window.promptbook.file.listDir(dirPath);
+    if (result.success) {
+      return {
+        files: result.files.map((f) => ({
+          name: f.name,
+          path: f.path,
+          isDirectory: f.isDirectory,
+        })),
+        cwd: result.cwd,
+      };
+    }
+    return { files: [], cwd: '' };
+  }, []);
+
   // Run All Cells sequentially
   const handleRunAllCells = useCallback(async () => {
     const codeCells = notebook.cells.filter((c) => c.cellType === 'code');
@@ -1616,6 +1638,7 @@ export function App() {
           onMoveCell={handleMoveCell}
           activeCellId={activeCellId || undefined}
           onCellFocus={setActiveCellId}
+          listFiles={listFiles}
         />
       </main>
       <Settings

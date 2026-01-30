@@ -663,6 +663,40 @@ ipcMain.handle('spellcheck:addWord', (_event, word: string) => {
 });
 
 // File handlers
+
+// List files in directory for @ autocomplete
+ipcMain.handle('file:listDir', async (_event, dirPath?: string) => {
+  try {
+    const targetDir = dirPath || process.cwd();
+    const entries = await fs.readdir(targetDir, { withFileTypes: true });
+
+    const files: { name: string; isDirectory: boolean; path: string }[] = [];
+    for (const entry of entries) {
+      // Skip hidden files and common non-data directories
+      if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === '__pycache__') {
+        continue;
+      }
+      files.push({
+        name: entry.name,
+        isDirectory: entry.isDirectory(),
+        path: path.join(targetDir, entry.name),
+      });
+    }
+
+    // Sort: directories first, then files, alphabetically
+    files.sort((a, b) => {
+      if (a.isDirectory !== b.isDirectory) {
+        return a.isDirectory ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
+
+    return { success: true, files, cwd: targetDir };
+  } catch (err) {
+    return { success: false, error: String(err), files: [], cwd: process.cwd() };
+  }
+});
+
 ipcMain.handle('file:open', async () => {
   const { dialog } = await import('electron');
   const result = await dialog.showOpenDialog(mainWindow!, {

@@ -75,6 +75,7 @@ contextBridge.exposeInMainWorld('promptbook', {
       ipcRenderer.invoke('file:save', filePath, notebook),
     saveAs: (notebook: unknown) => ipcRenderer.invoke('file:saveAs', notebook),
     exportPython: (notebook: unknown) => ipcRenderer.invoke('file:exportPython', notebook),
+    listDir: (dirPath?: string) => ipcRenderer.invoke('file:listDir', dirPath),
   },
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),
