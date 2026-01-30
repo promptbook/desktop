@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron';
-import { buildSyncPrompt, type AiSyncContext } from '@promptbook/core/sync';
+import { buildSyncPrompt, type AiSyncContext, type GeneratedSymbol, type CodeGenerationResult } from '@promptbook/core/sync';
 
 // Helper to import ESM modules in CommonJS context
 const dynamicImport = new Function('specifier', 'return import(specifier)');
@@ -14,16 +14,61 @@ interface AiSettings {
   ollamaModel?: string;
 }
 
+interface AiSyncResult {
+  success: boolean;
+  result?: string;
+  symbols?: GeneratedSymbol[];
+  error?: string;
+}
+
+/**
+ * Parse structured JSON output from code generation
+ * Falls back to extracting code from markdown if JSON parsing fails
+ */
+function parseCodeGenerationResult(response: string, isToCode: boolean): { code: string; symbols: GeneratedSymbol[] } {
+  if (!isToCode) {
+    return { code: response.trim(), symbols: [] };
+  }
+
+  // Try to parse as JSON first
+  try {
+    // Look for JSON object in the response
+    const jsonMatch = response.match(/\{[\s\S]*"code"[\s\S]*"symbols"[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]) as CodeGenerationResult;
+      if (parsed.code && Array.isArray(parsed.symbols)) {
+        return {
+          code: parsed.code.trim(),
+          symbols: parsed.symbols.filter(s =>
+            s.name && s.kind && (s.kind === 'variable' || s.kind === 'function')
+          ),
+        };
+      }
+    }
+  } catch {
+    // JSON parsing failed, continue to fallback
+  }
+
+  // Fallback: extract code from markdown code blocks
+  let code = response;
+  const codeMatch = response.match(/```(?:python)?\s*([\s\S]*?)```/);
+  if (codeMatch) {
+    code = codeMatch[1];
+  }
+
+  return { code: code.trim(), symbols: [] };
+}
+
 async function aiSyncWithAgent(
   direction: string,
   context: AiSyncContext
-): Promise<{ success: boolean; result?: string; error?: string }> {
+): Promise<AiSyncResult> {
   try {
     const { query } = await dynamicImport('@anthropic-ai/claude-agent-sdk');
 
     const prompt = buildSyncPrompt(direction, context);
 
-    let result = '';
+    let rawResult = '';
 
     // Use the Claude Agent SDK query function
     for await (const message of query({
@@ -41,24 +86,19 @@ async function aiSyncWithAgent(
       },
     })) {
       if (message.type === 'result') {
-        result = (message as { type: 'result'; result: string }).result;
+        rawResult = (message as { type: 'result'; result: string }).result;
       }
     }
 
-    if (!result) {
+    if (!rawResult) {
       return { success: false, error: 'No response generated' };
     }
 
-    // Clean up markdown code blocks
+    // Parse the result based on direction
     const isToCode = direction === 'toCode' || direction === 'fullToCode' || direction === 'shortToCode';
-    if (isToCode) {
-      const codeMatch = result.match(/```(?:python)?\s*([\s\S]*?)```/);
-      if (codeMatch) {
-        result = codeMatch[1];
-      }
-    }
+    const { code, symbols } = parseCodeGenerationResult(rawResult, isToCode);
 
-    return { success: true, result: result.trim() };
+    return { success: true, result: code, symbols };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     console.error('[AI Sync] Exception:', errorMessage);
@@ -69,7 +109,7 @@ async function aiSyncWithAgent(
 async function aiSyncWithClaude(
   direction: string,
   context: AiSyncContext
-): Promise<{ success: boolean; result?: string; error?: string }> {
+): Promise<AiSyncResult> {
   const Anthropic = (await import('@anthropic-ai/sdk')).default;
   const client = new Anthropic();
 
@@ -83,13 +123,10 @@ async function aiSyncWithClaude(
 
   const textBlock = message.content.find((block) => block.type === 'text');
   if (textBlock && textBlock.type === 'text') {
-    let result = textBlock.text;
+    const rawResult = textBlock.text;
     const isToCode = direction === 'toCode' || direction === 'fullToCode' || direction === 'shortToCode';
-    if (isToCode) {
-      result = result.replace(/^```python\n?/i, '').replace(/\n?```$/i, '');
-      result = result.replace(/^```\n?/, '').replace(/\n?```$/i, '');
-    }
-    return { success: true, result: result.trim() };
+    const { code, symbols } = parseCodeGenerationResult(rawResult, isToCode);
+    return { success: true, result: code, symbols };
   }
 
   return { success: false, error: 'No response generated' };

@@ -8,6 +8,7 @@ import {
   Variable,
   FindReplace,
   PackageInstallModal,
+  KernelSymbol,
 } from '@promptbook/core/ui';
 import { Settings, AppSettings, defaultSettings } from './Settings';
 import { Icons } from './icons';
@@ -133,6 +134,12 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
     return result.success ? result.variables : [];
   }, []);
 
+  // Get kernel symbols for # autocomplete
+  const handleGetSymbols = useCallback(async (): Promise<KernelSymbol[]> => {
+    const result = await window.promptbook.kernel.getSymbols();
+    return result.success ? result.symbols : [];
+  }, []);
+
   // Keyboard shortcuts
   useKeyboardShortcuts({
     notebook: notebookHook.notebook,
@@ -235,6 +242,7 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
           activeCellId={notebookHook.activeCellId || undefined}
           onCellFocus={notebookHook.setActiveCellId}
           listFiles={notebookHook.listFiles}
+          getSymbols={handleGetSymbols}
         />
       </main>
       <Settings

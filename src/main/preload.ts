@@ -82,6 +82,7 @@ contextBridge.exposeInMainWorld('promptbook', {
     restart: () => ipcRenderer.invoke('kernel:restart'),
     getStatus: () => ipcRenderer.invoke('kernel:getStatus'),
     getVariables: () => ipcRenderer.invoke('kernel:getVariables'),
+    getSymbols: () => ipcRenderer.invoke('kernel:getSymbols'),
 
     // Event listeners
     onOutput: (callback: (output: KernelOutput, msgId: string) => void) => {

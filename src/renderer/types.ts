@@ -1,4 +1,5 @@
-import type { NotebookState, Variable } from '@promptbook/core/ui';
+import type { NotebookState, Variable, KernelSymbol } from '@promptbook/core/ui';
+import type { GeneratedSymbol } from '@promptbook/core/sync';
 import type { AppSettings } from './Settings';
 
 // Types for kernel
@@ -65,6 +66,11 @@ declare global {
           variables: Variable[];
           error?: string;
         }>;
+        getSymbols: () => Promise<{
+          success: boolean;
+          symbols: KernelSymbol[];
+          error?: string;
+        }>;
         onOutput: (callback: (output: KernelOutput, msgId: string) => void) => () => void;
         onStateChange: (callback: (state: KernelState) => void) => () => void;
         onError: (callback: (error: string) => void) => () => void;
@@ -79,8 +85,9 @@ declare global {
             existingCounterpart?: string;
             cellsBefore?: CellContext[];
             cellsAfter?: CellContext[];
+            proposedSymbols?: string[];
           }
-        ) => Promise<{ success: boolean; result?: string; error?: string }>;
+        ) => Promise<{ success: boolean; result?: string; symbols?: GeneratedSymbol[]; error?: string }>;
       };
       file: {
         open: () => Promise<string | undefined>;

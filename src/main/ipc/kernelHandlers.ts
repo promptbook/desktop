@@ -127,6 +127,98 @@ for name, value in list(globals().items()):
 print(json.dumps(_vars))
 `;
 
+// Python code for getting all symbols (variables AND functions) for autocomplete
+const GET_SYMBOLS_CODE = `
+import json
+import sys
+import inspect
+
+def _get_size_str(obj):
+    try:
+        size = sys.getsizeof(obj)
+        if size < 1024:
+            return f"{size} B"
+        elif size < 1024 * 1024:
+            return f"{size / 1024:.1f} KB"
+        else:
+            return f"{size / (1024 * 1024):.1f} MB"
+    except:
+        return None
+
+def _get_repr(obj, max_len=100):
+    try:
+        r = repr(obj)
+        if len(r) > max_len:
+            return r[:max_len] + "..."
+        return r
+    except:
+        return "<unable to repr>"
+
+def _get_type_name(obj):
+    t = type(obj).__name__
+    if t == 'ndarray':
+        return f"ndarray{obj.shape}"
+    if t == 'DataFrame':
+        return f"DataFrame({obj.shape[0]}x{obj.shape[1]})"
+    if t == 'Series':
+        return f"Series({len(obj)})"
+    return t
+
+def _get_func_signature(func):
+    try:
+        sig = inspect.signature(func)
+        return f"{func.__name__}{sig}"
+    except:
+        return f"{func.__name__}(...)"
+
+def _get_func_docstring(func, max_len=100):
+    try:
+        doc = inspect.getdoc(func)
+        if doc:
+            first_line = doc.split('\\n')[0]
+            if len(first_line) > max_len:
+                return first_line[:max_len] + "..."
+            return first_line
+        return None
+    except:
+        return None
+
+_symbols = []
+_skip_names = {'In', 'Out', 'get_ipython', 'exit', 'quit', 'json', 'sys', 'inspect',
+               '_get_size_str', '_get_repr', '_get_type_name', '_get_func_signature',
+               '_get_func_docstring', '_symbols', '_skip_names'}
+
+for name, value in list(globals().items()):
+    if name.startswith('_'):
+        continue
+    if name in _skip_names:
+        continue
+
+    # Check if it's a user-defined function
+    if callable(value) and not hasattr(value, '__self__'):
+        val_type = type(value).__name__
+        if val_type == 'function':
+            _symbols.append({
+                'name': name,
+                'kind': 'function',
+                'type': _get_func_signature(value),
+                'description': _get_func_docstring(value) or 'User-defined function'
+            })
+            continue
+        elif val_type in ['type', 'module', 'builtin_function_or_method']:
+            continue
+
+    # It's a variable
+    _symbols.append({
+        'name': name,
+        'kind': 'variable',
+        'type': _get_type_name(value),
+        'description': _get_repr(value)
+    })
+
+print(json.dumps(_symbols))
+`;
+
 // Settings type with at least python config
 interface KernelSettings {
   python: { selectedEnvironment?: string };
@@ -208,6 +300,23 @@ function registerExecutionHandlers(): void {
       return { success: true, variables: [] };
     } catch (err) {
       return { success: false, error: String(err), variables: [] };
+    }
+  });
+
+  ipcMain.handle('kernel:getSymbols', async () => {
+    if (!kernelManager) {
+      return { success: false, error: 'No kernel running', symbols: [] };
+    }
+    try {
+      const result = await kernelManager.execute(GET_SYMBOLS_CODE);
+      const stdoutOutput = result.outputs.find(o => o.type === 'stdout');
+      if (stdoutOutput) {
+        const symbols = JSON.parse(stdoutOutput.content.trim());
+        return { success: true, symbols };
+      }
+      return { success: true, symbols: [] };
+    } catch (err) {
+      return { success: false, error: String(err), symbols: [] };
     }
   });
 }
