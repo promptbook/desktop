@@ -260,9 +260,13 @@ ipcMain.handle('kernel:createVenv', async (_event, venvName: string = '.venv') =
   return result;
 });
 
+// Helper to import ESM modules in CommonJS context
+// eslint-disable-next-line @typescript-eslint/no-implied-eval
+const dynamicImport = new Function('specifier', 'return import(specifier)');
+
 // AI handlers
 async function aiSyncWithAgent(direction: string, content: string): Promise<{ success: boolean; result?: string; error?: string }> {
-  const { query } = await import('@anthropic-ai/claude-agent-sdk');
+  const { query } = await dynamicImport('@anthropic-ai/claude-agent-sdk');
 
   const prompt = direction === 'toCode'
     ? `Generate Python code for the following task. Return ONLY the Python code, no explanations or markdown:\n\n${content}`
