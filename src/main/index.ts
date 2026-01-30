@@ -383,52 +383,26 @@ async function aiSyncWithAgent(direction: string, context: AiSyncContext): Promi
     const q = query({
       prompt,
       options: {
-        maxTurns: 1,
-        // Disable all tools - we only need text generation
+        // No tools needed - just text generation
         tools: [],
-        // Don't persist session for these quick queries
+        // Bypass permissions since we're not using any tools
+        permissionMode: 'bypassPermissions',
+        // Limit to a single turn
+        maxTurns: 1,
+        // Don't persist the session
         persistSession: false,
       },
     });
 
     let result = '';
-    let lastError = '';
 
     for await (const message of q) {
-      console.log('[AI Sync] Received message type:', message.type, message.subtype || '');
+      console.log('[AI Sync] Received message type:', message.type);
 
-      // Handle result message (success or error)
+      // Collect the result text from result messages
       if (message.type === 'result') {
-        if (message.subtype === 'error' || message.is_error) {
-          lastError = (message as { error?: string }).error ||
-                      (message as { result?: string }).result ||
-                      'Unknown error from Claude';
-          console.error('[AI Sync] Result error:', lastError);
-          continue; // Continue to see if there's more info
-        }
-        // Use the result field from SDKResultSuccess
-        if (message.result) {
-          result = message.result;
-        }
+        result = (message as { type: 'result'; result: string }).result;
       }
-
-      // Also capture from assistant messages
-      if (message.type === 'assistant' && message.message?.content) {
-        for (const block of message.message.content) {
-          if (block.type === 'text') {
-            result += block.text;
-          }
-        }
-      }
-
-      // Capture system messages for debugging
-      if (message.type === 'system') {
-        console.log('[AI Sync] System message:', JSON.stringify(message).slice(0, 500));
-      }
-    }
-
-    if (!result && lastError) {
-      return { success: false, error: lastError };
     }
 
     if (!result) {
@@ -444,9 +418,7 @@ async function aiSyncWithAgent(direction: string, context: AiSyncContext): Promi
     return { success: true, result: result.trim() };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    const stack = err instanceof Error ? err.stack : '';
     console.error('[AI Sync] Exception:', errorMessage);
-    console.error('[AI Sync] Stack:', stack);
     return { success: false, error: `Agent SDK Error: ${errorMessage}` };
   }
 }
