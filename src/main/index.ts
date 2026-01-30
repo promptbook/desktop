@@ -517,7 +517,9 @@ Return ONLY the shortened instructions, no code or markdown.`;
   }
   // Normalize direction types
   const isToCode = direction === 'toCode' || direction === 'fullToCode' || direction === 'shortToCode';
-  const isToInstructions = direction === 'toInstructions' || direction === 'codeToShort' || direction === 'codeToFull';
+  const isToShort = direction === 'codeToShort';
+  const isToFull = direction === 'codeToFull';
+  const isToInstructions = direction === 'toInstructions' || isToShort || isToFull;
 
   const hasExistingCode = isToCode && existingCounterpart?.trim();
   const hasExistingInstructions = isToInstructions && existingCounterpart?.trim();
@@ -567,20 +569,31 @@ TASK:
 ${newContent}`;
     }
   } else {
-    // toInstructions
-    const conciseGuidelines = `
-IMPORTANT GUIDELINES FOR INSTRUCTIONS:
-- Be EXTREMELY concise (1 short sentence preferred)
+    // toInstructions - differentiate between short and full descriptions
+    const shortGuidelines = `
+GUIDELINES FOR SHORT DESCRIPTION:
+- Maximum 1 short sentence (5-10 words)
+- Start with action verb: "Generate", "Calculate", "Plot", "Load", etc.
 - Don't mention "Python" or "code" - it's obvious
-- Use action words: "Generate", "Calculate", "Plot", "Load", etc.
-- Include key parameters as {{parameter_name:value}} placeholders
-- Example: "Generate the first {{count:10}} Fibonacci numbers starting at {{start:0}}"
-- Example: "Plot {{metric:temperature}} over {{period:last 7 days}}"
-- Example: "Calculate {{operation:sum}} of {{numbers:1, 2, 3, 4, 5}}"`;
+- Include key parameters as {{name:value}} placeholders
+- Example: "Generate first {{count:10}} Fibonacci numbers"
+- Example: "Plot {{metric:temperature}} trends"`;
+
+    const fullGuidelines = `
+GUIDELINES FOR FULL DESCRIPTION:
+- 2-4 sentences with more detail
+- Describe the purpose and approach
+- Include ALL parameters as {{name:value}} placeholders
+- Explain what inputs are expected and what outputs are produced
+- Example: "Generate the first {{count:10}} Fibonacci numbers starting from {{start:0}}. Store results in a list and print each number."
+- Example: "Load data from {{file:data.csv}} and plot {{metric:temperature}} over {{period:last 7 days}}. Use matplotlib with a line chart."`;
+
+    const guidelines = isToShort ? shortGuidelines : fullGuidelines;
+    const lengthHint = isToShort ? 'Keep it very short (1 sentence, 5-10 words).' : 'Include 2-4 sentences with details.';
 
     if (hasExistingInstructions && hasChanges) {
       // Code changed, update existing instructions
-      return `You are updating instructions based on changed code.
+      return `You are updating ${isToShort ? 'a SHORT description' : 'a FULL description'} based on changed code.
 
 PREVIOUS CODE:
 \`\`\`python
@@ -592,38 +605,42 @@ NEW CODE:
 ${newContent}
 \`\`\`
 
-CURRENT INSTRUCTIONS:
+CURRENT ${isToShort ? 'SHORT' : 'FULL'} DESCRIPTION:
 ${existingCounterpart}
-${conciseGuidelines}
+${guidelines}
 
-Update the instructions to accurately describe what the new code does. Make MINIMAL changes.
+Update the description to accurately describe what the new code does. ${lengthHint}
 
-Return ONLY the updated instructions, no code or markdown.`;
+Return ONLY the updated description, no code or markdown.`;
     } else if (hasExistingInstructions) {
       // Existing instructions as reference
-      return `You are generating instructions for code. There are existing instructions that may be relevant.
+      return `You are generating a ${isToShort ? 'SHORT' : 'FULL'} description for code.
 
 CODE:
 \`\`\`python
 ${newContent}
 \`\`\`
 
-EXISTING INSTRUCTIONS (use as reference for style):
+EXISTING DESCRIPTION (use as reference for style):
 ${existingCounterpart}
-${conciseGuidelines}
+${guidelines}
 
-Return ONLY the instructions, no code or markdown.`;
+${lengthHint}
+
+Return ONLY the description, no code or markdown.`;
     } else {
       // Fresh generation
-      return `Describe what this code does in a concise instruction.
-${conciseGuidelines}
+      return `Generate a ${isToShort ? 'SHORT' : 'FULL'} description for this code.
+${guidelines}
 
 CODE:
 \`\`\`python
 ${newContent}
 \`\`\`
 
-Return ONLY the instruction, no code or markdown.`;
+${lengthHint}
+
+Return ONLY the description, no code or markdown.`;
     }
   }
 }

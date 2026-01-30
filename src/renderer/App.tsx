@@ -944,8 +944,9 @@ export function App() {
         return;
       }
 
-      // Command mode shortcuts (when not in input)
-      if (commandMode || !isInInput) {
+      // Command mode shortcuts (only when not in any input field)
+      // Single-letter shortcuts should never fire while typing
+      if (!isInInput) {
         // Enter: edit mode
         if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
           e.preventDefault();
