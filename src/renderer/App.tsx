@@ -284,15 +284,19 @@ export function App() {
             });
 
             // Now generate proper instructions from the code (to replace raw prompt)
+            // Don't pass existingCounterpart - we want fresh instructions, not modifications to raw prompt
+            console.log('[Run] Generating instructions from code...');
             const instructionsContext = {
               newContent: generatedCode,
               previousContent: undefined,
-              existingCounterpart: cell.instructions!.text.trim(),
+              existingCounterpart: undefined, // Fresh generation, not minimal modifications
             };
 
             const instructionsResult = await window.promptbook.ai.sync(cellId, 'toInstructions', instructionsContext);
+            console.log('[Run] Instructions result:', instructionsResult);
 
             if (instructionsResult.success && instructionsResult.result) {
+              console.log('[Run] Updating instructions to:', instructionsResult.result);
               handleUpdate(cellId, {
                 instructions: { text: instructionsResult.result, parameters: cell.instructions?.parameters || [] },
                 isSyncing: false,
@@ -300,6 +304,7 @@ export function App() {
                 lastSyncedInstructions: instructionsResult.result,
               });
             } else {
+              console.log('[Run] Instructions generation failed or empty');
               handleUpdate(cellId, { isSyncing: false });
             }
 
