@@ -515,6 +515,45 @@ ${newContent}
 
 Return ONLY the shortened instructions, no code or markdown.`;
   }
+
+  // Handle description-to-description conversions
+  if (direction === 'shortToFull') {
+    return `Expand this short description into a fuller, more detailed description.
+
+SHORT DESCRIPTION:
+${newContent}
+
+${existingCounterpart ? `EXISTING FULL DESCRIPTION (use as reference):
+${existingCounterpart}
+
+` : ''}GUIDELINES:
+- Write 2-4 sentences with more detail
+- Keep ALL parameters in {{name:value}} format
+- Explain the purpose and approach
+- Describe expected inputs and outputs
+- Don't add parameters that aren't in the short description
+
+Return ONLY the expanded description, no code or markdown.`;
+  }
+
+  if (direction === 'fullToShort') {
+    return `Condense this full description into a short, concise summary.
+
+FULL DESCRIPTION:
+${newContent}
+
+${existingCounterpart ? `EXISTING SHORT DESCRIPTION (use as reference):
+${existingCounterpart}
+
+` : ''}GUIDELINES:
+- Maximum 1 short sentence (5-10 words)
+- Start with action verb: "Generate", "Calculate", "Plot", etc.
+- Keep the most important parameters in {{name:value}} format
+- Don't mention "Python" or "code"
+
+Return ONLY the shortened description, no code or markdown.`;
+  }
+
   // Normalize direction types
   const isToCode = direction === 'toCode' || direction === 'fullToCode' || direction === 'shortToCode';
   const isToShort = direction === 'codeToShort';
