@@ -13,6 +13,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@promptbook/core/ui': path.resolve(__dirname, '../core/src/ui'),
+      '@promptbook/core/utils': path.resolve(__dirname, '../core/src/utils'),
       '@promptbook/core/styles': path.resolve(__dirname, '../core/src/ui/styles/index.css'),
     },
   },
