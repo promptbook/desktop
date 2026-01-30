@@ -106,6 +106,81 @@ declare global {
   }
 }
 
+// Helper functions for parameter handling
+function extractParams(text: string): Record<string, string> {
+  const params: Record<string, string> = {};
+  const regex = /\{\{([^:}]+):([^}]+)\}\}/g;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    params[match[1].trim()] = match[2].trim();
+  }
+  return params;
+}
+
+function getParamChanges(
+  oldParams: Record<string, string>,
+  newParams: Record<string, string>
+): { added: string[]; removed: string[]; changed: Record<string, { old: string; new: string }> } {
+  const added: string[] = [];
+  const removed: string[] = [];
+  const changed: Record<string, { old: string; new: string }> = {};
+
+  // Check for changed and removed params
+  for (const [name, oldValue] of Object.entries(oldParams)) {
+    if (!(name in newParams)) {
+      removed.push(name);
+    } else if (newParams[name] !== oldValue) {
+      changed[name] = { old: oldValue, new: newParams[name] };
+    }
+  }
+
+  // Check for added params
+  for (const name of Object.keys(newParams)) {
+    if (!(name in oldParams)) {
+      added.push(name);
+    }
+  }
+
+  return { added, removed, changed };
+}
+
+function applyParamChangesToCode(code: string, changes: Record<string, { old: string; new: string }>): string {
+  let result = code;
+  for (const { old: oldValue, new: newValue } of Object.values(changes)) {
+    // Replace old value with new value in code
+    // Be careful to replace as whole values, not partial matches
+    const escapedOld = oldValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Match the value as a standalone token (number, string literal, or identifier)
+    const patterns = [
+      new RegExp(`\\b${escapedOld}\\b`, 'g'), // As a word/number
+      new RegExp(`"${escapedOld}"`, 'g'),     // As a double-quoted string
+      new RegExp(`'${escapedOld}'`, 'g'),     // As a single-quoted string
+    ];
+    for (const pattern of patterns) {
+      if (pattern.test(result)) {
+        result = result.replace(pattern, (match) => {
+          if (match.startsWith('"')) return `"${newValue}"`;
+          if (match.startsWith("'")) return `'${newValue}'`;
+          return newValue;
+        });
+        break; // Found and replaced
+      }
+    }
+  }
+  return result;
+}
+
+function applyParamChangesToDescription(text: string, changes: Record<string, { old: string; new: string }>): string {
+  let result = text;
+  for (const [name, { old: oldValue, new: newValue }] of Object.entries(changes)) {
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapedOld = oldValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\{\\{${escapedName}:${escapedOld}\\}\\}`, 'g');
+    result = result.replace(regex, `{{${name}:${newValue}}}`);
+  }
+  return result;
+}
+
 // SVG Icons
 const Icons = {
   folder: (
@@ -307,7 +382,40 @@ export function App() {
       const hasDescription = cell.shortDescription?.trim() || cell.fullDescription?.trim();
       const hasCode = cell.code?.trim();
 
-      // If cell is dirty, sync with AI first
+      // If cell is dirty, check if it's just a parameter change
+      if (cell.isDirty && hasDescription && hasCode) {
+        // Extract current params from descriptions
+        const currentShortParams = extractParams(cell.shortDescription || '');
+        const currentFullParams = extractParams(cell.fullDescription || '');
+        const currentParams = { ...currentShortParams, ...currentFullParams };
+
+        // Check if we have lastSyncedParams to compare against
+        if (cell.lastSyncedParams) {
+          const { added, removed, changed } = getParamChanges(cell.lastSyncedParams, currentParams);
+
+          // If only values changed (no structural changes), do direct replacement
+          if (added.length === 0 && removed.length === 0 && Object.keys(changed).length > 0) {
+            // Apply changes directly without LLM
+            const newCode = applyParamChangesToCode(cell.code, changed);
+            const newShort = applyParamChangesToDescription(cell.shortDescription || '', changed);
+            const newFull = applyParamChangesToDescription(cell.fullDescription || '', changed);
+
+            handleUpdate(cellId, {
+              code: newCode,
+              shortDescription: newShort,
+              fullDescription: newFull,
+              lastSyncedCode: newCode,
+              lastSyncedShort: newShort,
+              lastSyncedFull: newFull,
+              lastSyncedParams: currentParams,
+              isDirty: false,
+            });
+            cell = { ...cell, code: newCode, shortDescription: newShort, fullDescription: newFull };
+          }
+        }
+      }
+
+      // If cell is still dirty after param check, sync with AI
       if (cell.isDirty && hasDescription) {
         handleUpdate(cellId, { isSyncing: true });
 
@@ -338,6 +446,9 @@ export function App() {
             const newShort = shortResult.success ? shortResult.result || cell.shortDescription : cell.shortDescription;
             const newFull = fullResult.success ? fullResult.result || cell.fullDescription : cell.fullDescription;
 
+            // Extract params from the synced descriptions for future comparison
+            const syncedParams = { ...extractParams(newShort), ...extractParams(newFull) };
+
             handleUpdate(cellId, {
               code: generatedCode,
               shortDescription: newShort,
@@ -345,6 +456,7 @@ export function App() {
               lastSyncedCode: generatedCode,
               lastSyncedShort: newShort,
               lastSyncedFull: newFull,
+              lastSyncedParams: syncedParams,
               isDirty: false,
               isSyncing: false,
             });
@@ -392,6 +504,9 @@ export function App() {
             const newShort = shortResult.success ? shortResult.result || cell.shortDescription : cell.shortDescription;
             const newFull = fullResult.success ? fullResult.result || cell.fullDescription : cell.fullDescription;
 
+            // Extract params from the synced descriptions for future comparison
+            const syncedParams = { ...extractParams(newShort), ...extractParams(newFull) };
+
             handleUpdate(cellId, {
               code: generatedCode,
               shortDescription: newShort,
@@ -399,6 +514,7 @@ export function App() {
               lastSyncedCode: generatedCode,
               lastSyncedShort: newShort,
               lastSyncedFull: newFull,
+              lastSyncedParams: syncedParams,
               isDirty: false,
               isSyncing: false,
             });
