@@ -120,7 +120,7 @@ export function Settings({ isOpen, onClose, settings, onSave }: SettingsProps) {
                     className={`settings-provider-btn ${localSettings.ai.provider === provider ? 'active' : ''}`}
                     onClick={() => updateAI({ provider })}
                   >
-                    {provider === 'agent' && 'Claude Agent'}
+                    {provider === 'agent' && 'Claude Agent (Bedrock)'}
                     {provider === 'claude' && 'Claude API'}
                     {provider === 'bedrock' && 'AWS Bedrock'}
                     {provider === 'openai' && 'OpenAI'}
@@ -134,8 +134,12 @@ export function Settings({ isOpen, onClose, settings, onSave }: SettingsProps) {
             {localSettings.ai.provider === 'agent' && (
               <div className="settings-field">
                 <p className="settings-hint" style={{ marginTop: 0 }}>
-                  Uses the Claude Agent SDK with your configured credentials.
-                  Set <code>ANTHROPIC_API_KEY</code> environment variable or configure AWS Bedrock credentials.
+                  Uses the Claude Agent SDK via Bedrock. No API key required -
+                  authentication is handled automatically via the <code>claude</code> CLI credentials
+                  stored in <code>~/.claude</code>.
+                </p>
+                <p className="settings-hint">
+                  If not logged in, run <code>claude login</code> in your terminal first.
                 </p>
               </div>
             )}
