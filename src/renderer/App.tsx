@@ -244,7 +244,7 @@ export function App() {
 
   const handleRunCell = useCallback(
     async (cellId: string) => {
-      const cell = notebook.cells.find((c) => c.id === cellId);
+      let cell = notebook.cells.find((c) => c.id === cellId);
       if (!cell) return;
 
       // Check if we have a kernel
@@ -255,6 +255,71 @@ export function App() {
         return;
       }
 
+      // If we have instructions but no code, generate code first
+      const hasInstructions = cell.instructions?.text?.trim();
+      const hasCode = cell.code?.trim();
+
+      if (hasInstructions && !hasCode) {
+        // Generate code from instructions
+        handleUpdate(cellId, { isSyncing: true });
+
+        try {
+          const context = {
+            newContent: cell.instructions!.text.trim(),
+            previousContent: cell.lastSyncedInstructions,
+            existingCounterpart: cell.code,
+          };
+
+          const syncResult = await window.promptbook.ai.sync(cellId, 'toCode', context);
+
+          if (syncResult.success && syncResult.result) {
+            const generatedCode = syncResult.result;
+
+            // Update cell with generated code
+            handleUpdate(cellId, {
+              code: generatedCode,
+              lastSyncedInstructions: cell.instructions!.text.trim(),
+              lastSyncedCode: generatedCode,
+              isDirty: false,
+            });
+
+            // Now generate proper instructions from the code (to replace raw prompt)
+            const instructionsContext = {
+              newContent: generatedCode,
+              previousContent: undefined,
+              existingCounterpart: cell.instructions!.text.trim(),
+            };
+
+            const instructionsResult = await window.promptbook.ai.sync(cellId, 'toInstructions', instructionsContext);
+
+            if (instructionsResult.success && instructionsResult.result) {
+              handleUpdate(cellId, {
+                instructions: { text: instructionsResult.result, parameters: cell.instructions?.parameters || [] },
+                isSyncing: false,
+                lastSyncedCode: generatedCode,
+                lastSyncedInstructions: instructionsResult.result,
+              });
+            } else {
+              handleUpdate(cellId, { isSyncing: false });
+            }
+
+            // Re-fetch the cell with updated code
+            cell = { ...cell, code: generatedCode };
+          } else {
+            handleUpdate(cellId, { isSyncing: false });
+            if (syncResult.error) {
+              setGlobalError(syncResult.error);
+            }
+            return;
+          }
+        } catch (error) {
+          handleUpdate(cellId, { isSyncing: false });
+          setGlobalError(String(error));
+          return;
+        }
+      }
+
+      // Now execute the code
       handleUpdate(cellId, { isExecuting: true, outputs: [] });
 
       try {
