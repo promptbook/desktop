@@ -69,7 +69,15 @@ declare global {
         onError: (callback: (error: string) => void) => () => void;
       };
       ai: {
-        sync: (cellId: string, direction: string, content: string) => Promise<{ success: boolean; result?: string; error?: string }>;
+        sync: (
+          cellId: string,
+          direction: string,
+          context: {
+            newContent: string;
+            previousContent?: string;
+            existingCounterpart?: string;
+          }
+        ) => Promise<{ success: boolean; result?: string; error?: string }>;
       };
       file: {
         open: () => Promise<string | undefined>;
@@ -294,28 +302,44 @@ export function App() {
       const direction =
         cell.lastEditedTab === 'instructions' ? 'toCode' : 'toInstructions';
 
-      // Get content based on direction
-      const content = direction === 'toCode'
+      // Get the new content (what was just edited)
+      const newContent = direction === 'toCode'
         ? (cell.instructions?.text || '')
         : cell.code;
 
-      if (!content.trim()) {
+      if (!newContent.trim()) {
         setGlobalError('No content to sync');
         return;
       }
 
       // Check cache: skip AI call if content hasn't changed since last sync
-      if (direction === 'toCode' && cell.lastSyncedInstructions === content.trim()) {
-        // Content hasn't changed, no need to call AI again
+      if (direction === 'toCode' && cell.lastSyncedInstructions === newContent.trim()) {
         handleUpdate(cellId, { isDirty: false });
         return;
       }
+      if (direction === 'toInstructions' && cell.lastSyncedCode === newContent.trim()) {
+        handleUpdate(cellId, { isDirty: false });
+        return;
+      }
+
+      // Build context for incremental sync
+      const context = {
+        newContent: newContent.trim(),
+        // Previous content is what we last synced (before this edit)
+        previousContent: direction === 'toCode'
+          ? cell.lastSyncedInstructions
+          : cell.lastSyncedCode,
+        // Existing counterpart is the current value of the other side
+        existingCounterpart: direction === 'toCode'
+          ? cell.code
+          : cell.instructions?.text,
+      };
 
       // Set syncing state to show progress overlay
       handleUpdate(cellId, { isSyncing: true });
 
       try {
-        const result = await window.promptbook.ai.sync(cellId, direction, content);
+        const result = await window.promptbook.ai.sync(cellId, direction, context);
 
         if (result.success && result.result) {
           if (direction === 'toCode') {
@@ -323,13 +347,16 @@ export function App() {
               code: result.result,
               isDirty: false,
               isSyncing: false,
-              lastSyncedInstructions: content.trim(), // Cache the synced instructions
+              lastSyncedInstructions: newContent.trim(),
+              lastSyncedCode: result.result, // Cache the generated code too
             });
           } else {
             handleUpdate(cellId, {
               instructions: { text: result.result, parameters: cell.instructions?.parameters || [] },
               isDirty: false,
               isSyncing: false,
+              lastSyncedCode: newContent.trim(),
+              lastSyncedInstructions: result.result, // Cache the generated instructions too
             });
           }
         } else {

@@ -264,13 +264,119 @@ ipcMain.handle('kernel:createVenv', async (_event, venvName: string = '.venv') =
 // eslint-disable-next-line @typescript-eslint/no-implied-eval
 const dynamicImport = new Function('specifier', 'return import(specifier)');
 
+// AI sync context type
+interface AiSyncContext {
+  newContent: string;
+  previousContent?: string;
+  existingCounterpart?: string;
+}
+
+// Build smart prompt based on context
+function buildSyncPrompt(direction: string, context: AiSyncContext): string {
+  const { newContent, previousContent, existingCounterpart } = context;
+  const hasExistingCode = direction === 'toCode' && existingCounterpart?.trim();
+  const hasExistingInstructions = direction === 'toInstructions' && existingCounterpart?.trim();
+  const hasChanges = previousContent && previousContent !== newContent;
+
+  if (direction === 'toCode') {
+    if (hasExistingCode && hasChanges) {
+      // Incremental update: instructions changed, update existing code
+      return `You are updating Python code based on changed instructions.
+
+PREVIOUS INSTRUCTIONS:
+${previousContent}
+
+NEW INSTRUCTIONS:
+${newContent}
+
+CURRENT CODE:
+\`\`\`python
+${existingCounterpart}
+\`\`\`
+
+Update the code to reflect the new instructions. Make MINIMAL changes - only modify what's necessary to implement the changes. Keep the code structure, variable names, and style consistent with the existing code unless the changes require otherwise.
+
+Return ONLY the updated Python code, no explanations or markdown.`;
+    } else if (hasExistingCode) {
+      // Existing code but no tracked changes - still use it as reference
+      return `You are generating Python code for a task. There is existing code that may be relevant.
+
+INSTRUCTIONS:
+${newContent}
+
+EXISTING CODE (use as reference for style/structure):
+\`\`\`python
+${existingCounterpart}
+\`\`\`
+
+Generate code that implements the instructions. If the existing code is close to what's needed, make minimal modifications. Otherwise, write new code following the same coding style.
+
+Return ONLY the Python code, no explanations or markdown.`;
+    } else {
+      // Fresh generation
+      return `Generate Python code for the following task. Write clean, efficient, and well-structured code.
+
+Return ONLY the Python code, no explanations or markdown.
+
+TASK:
+${newContent}`;
+    }
+  } else {
+    // toInstructions
+    if (hasExistingInstructions && hasChanges) {
+      // Code changed, update existing instructions
+      return `You are updating instructions based on changed code.
+
+PREVIOUS CODE:
+\`\`\`python
+${previousContent}
+\`\`\`
+
+NEW CODE:
+\`\`\`python
+${newContent}
+\`\`\`
+
+CURRENT INSTRUCTIONS:
+${existingCounterpart}
+
+Update the instructions to accurately describe what the new code does. Make MINIMAL changes - only modify what's necessary to reflect the code changes.
+
+Return ONLY the updated instructions, no code or markdown.`;
+    } else if (hasExistingInstructions) {
+      // Existing instructions as reference
+      return `You are generating instructions for Python code. There are existing instructions that may be relevant.
+
+CODE:
+\`\`\`python
+${newContent}
+\`\`\`
+
+EXISTING INSTRUCTIONS (use as reference for style):
+${existingCounterpart}
+
+Describe what the code does in clear, concise instructions. If the existing instructions are close to accurate, make minimal modifications.
+
+Return ONLY the instructions, no code or markdown.`;
+    } else {
+      // Fresh generation
+      return `Describe what this Python code does in clear, concise instructions.
+
+Return ONLY the description, no code or markdown.
+
+CODE:
+\`\`\`python
+${newContent}
+\`\`\``;
+    }
+  }
+}
+
 // AI handlers
-async function aiSyncWithAgent(direction: string, content: string): Promise<{ success: boolean; result?: string; error?: string }> {
+async function aiSyncWithAgent(direction: string, context: AiSyncContext): Promise<{ success: boolean; result?: string; error?: string }> {
   const { query } = await dynamicImport('@anthropic-ai/claude-agent-sdk');
 
-  const prompt = direction === 'toCode'
-    ? `Generate Python code for the following task. Return ONLY the Python code, no explanations or markdown:\n\n${content}`
-    : `Describe what this Python code does in a concise instruction. Return ONLY the description, no code:\n\n${content}`;
+  const prompt = buildSyncPrompt(direction, context);
 
   const q = query({
     prompt,
@@ -304,17 +410,15 @@ async function aiSyncWithAgent(direction: string, content: string): Promise<{ su
   return { success: true, result: result.trim() };
 }
 
-async function aiSyncWithClaude(direction: string, content: string): Promise<{ success: boolean; result?: string; error?: string }> {
+async function aiSyncWithClaude(direction: string, context: AiSyncContext): Promise<{ success: boolean; result?: string; error?: string }> {
   const Anthropic = (await import('@anthropic-ai/sdk')).default;
   const client = new Anthropic();
 
-  const prompt = direction === 'toCode'
-    ? `Generate Python code for the following task. Return ONLY the Python code, no explanations or markdown:\n\n${content}`
-    : `Describe what this Python code does in a concise instruction. Return ONLY the description, no code:\n\n${content}`;
+  const prompt = buildSyncPrompt(direction, context);
 
   const message = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 1024,
+    max_tokens: 2048,
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -331,16 +435,16 @@ async function aiSyncWithClaude(direction: string, content: string): Promise<{ s
   return { success: false, error: 'No response generated' };
 }
 
-ipcMain.handle('ai:sync', async (_event, _cellId: string, direction: string, content: string) => {
+ipcMain.handle('ai:sync', async (_event, _cellId: string, direction: string, context: AiSyncContext) => {
   try {
     const provider = currentSettings.ai?.provider || 'agent';
 
     switch (provider) {
       case 'agent':
-        return await aiSyncWithAgent(direction, content);
+        return await aiSyncWithAgent(direction, context);
 
       case 'claude':
-        return await aiSyncWithClaude(direction, content);
+        return await aiSyncWithClaude(direction, context);
 
       case 'bedrock':
         // TODO: Implement Bedrock provider

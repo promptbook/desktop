@@ -57,8 +57,15 @@ contextBridge.exposeInMainWorld('promptbook', {
     },
   },
   ai: {
-    sync: (cellId: string, direction: string, content: string) =>
-      ipcRenderer.invoke('ai:sync', cellId, direction, content),
+    sync: (
+      cellId: string,
+      direction: string,
+      context: {
+        newContent: string;
+        previousContent?: string;
+        existingCounterpart?: string;
+      }
+    ) => ipcRenderer.invoke('ai:sync', cellId, direction, context),
   },
   file: {
     open: () => ipcRenderer.invoke('file:open'),
