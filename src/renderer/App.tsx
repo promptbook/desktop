@@ -4,8 +4,10 @@ import {
   NotebookState,
   CellState,
   CellOutput,
+  CellType,
   createEmptyNotebook,
-  createEmptyCell,
+  createCodeCell,
+  createTextCell,
   KernelStatus,
   EnvironmentPicker,
 } from '@promptbook/core/ui';
@@ -124,11 +126,14 @@ const Icons = {
       <path d="M13.5 8a5.5 5.5 0 0 0-.1-1.1l1.3-.9a.3.3 0 0 0 .1-.4l-1.2-2.1a.3.3 0 0 0-.4-.1l-1.5.6a5 5 0 0 0-1-.6l-.2-1.6a.3.3 0 0 0-.3-.3H7.8a.3.3 0 0 0-.3.3l-.2 1.6a5 5 0 0 0-1 .6l-1.5-.6a.3.3 0 0 0-.4.1L3.2 5.6a.3.3 0 0 0 .1.4l1.3.9A5.5 5.5 0 0 0 4.5 8c0 .4 0 .7.1 1.1l-1.3.9a.3.3 0 0 0-.1.4l1.2 2.1a.3.3 0 0 0 .4.1l1.5-.6a5 5 0 0 0 1 .6l.2 1.6a.3.3 0 0 0 .3.3h2.4a.3.3 0 0 0 .3-.3l.2-1.6a5 5 0 0 0 1-.6l1.5.6a.3.3 0 0 0 .4-.1l1.2-2.1a.3.3 0 0 0-.1-.4l-1.3-.9a5.5 5.5 0 0 0 .1-1.1z" />
     </svg>
   ),
-  sparkles: (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-      <path d="M9 1.5l1.5 4.5L15 7.5l-4.5 1.5L9 13.5 7.5 9 3 7.5l4.5-1.5L9 1.5z" fill="currentColor" opacity="0.8" />
-      <path d="M14 12l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5L12 14l1.5-.5.5-1.5z" fill="currentColor" opacity="0.6" />
-      <path d="M4 2l.375 1.125L5.5 3.5l-1.125.375L4 5l-.375-1.125L2.5 3.5l1.125-.375L4 2z" fill="currentColor" opacity="0.5" />
+  logo: (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+      {/* Notebook base */}
+      <rect x="4" y="3" width="14" height="18" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      {/* Binding */}
+      <path d="M4 7h14M4 17h14" stroke="currentColor" strokeWidth="1" opacity="0.3" />
+      {/* AI sparkle */}
+      <path d="M11 10l1.2 2.4 2.8.4-2 2 .5 2.7-2.5-1.3-2.5 1.3.5-2.7-2-2 2.8-.4L11 10z" fill="currentColor" opacity="0.9" />
     </svg>
   ),
 };
@@ -152,11 +157,34 @@ export function App() {
   // Active cell tracking for keyboard shortcuts
   const [activeCellId, setActiveCellId] = useState<string | null>(null);
 
-  // Load settings and environments on mount
+  // Load settings and environments on mount, auto-connect to best venv
   useEffect(() => {
     window.promptbook.settings.load().then(setSettings);
-    window.promptbook.kernel.scanEnvironments().then(setEnvironments);
     window.promptbook.kernel.getStatus().then(({ state }) => setKernelState(state));
+
+    // Auto-connect to best available environment
+    window.promptbook.kernel.scanEnvironments().then(async (envs) => {
+      setEnvironments(envs);
+
+      // Skip auto-connect if already connected
+      const status = await window.promptbook.kernel.getStatus();
+      if (status.state !== 'disconnected' && status.state !== 'dead') {
+        return;
+      }
+
+      // Priority 1: Local project venv (./.venv or ./venv)
+      const localVenv = envs.find(
+        (e) => e.type === 'venv' && (e.name === '.venv' || e.name === 'venv')
+      );
+
+      // Priority 2: First environment with ipykernel installed
+      const withIpykernel = envs.find((e) => e.hasIpykernel);
+
+      const autoEnv = localVenv || withIpykernel;
+      if (autoEnv) {
+        handleSelectEnvironment(autoEnv);
+      }
+    });
   }, []);
 
   // Set initial active cell when notebook loads
@@ -266,7 +294,7 @@ export function App() {
   const handleRunCell = useCallback(
     async (cellId: string) => {
       let cell = notebook.cells.find((c) => c.id === cellId);
-      if (!cell) return;
+      if (!cell || cell.cellType === 'text') return;
 
       // Check if we have a kernel
       const status = await window.promptbook.kernel.getStatus();
@@ -276,37 +304,30 @@ export function App() {
         return;
       }
 
-      const hasInstructions = cell.instructions?.text?.trim();
+      const hasDescription = cell.shortDescription?.trim() || cell.fullDescription?.trim();
       const hasCode = cell.code?.trim();
 
-      // If cell is dirty (text was edited, not just params), sync with AI first
-      // AI will try to preserve user edits while fixing any issues
-      if (cell.isDirty && hasInstructions && hasCode) {
-        console.log('[Run] Cell is dirty, syncing instructions → code with AI...');
+      // If cell is dirty, sync with AI first
+      if (cell.isDirty && hasDescription) {
         handleUpdate(cellId, { isSyncing: true });
 
         try {
-          // Provide AI with current instructions + previous synced instructions
-          // AI should try to preserve user edits, fix text if needed, then update code
-          const context = {
-            newContent: cell.instructions!.text.trim(),
-            previousContent: cell.lastSyncedInstructions, // What it was before user edited
-            existingCounterpart: cell.code, // Current code to update
-          };
-
-          console.log('[Run] Sync context:', context);
-          const syncResult = await window.promptbook.ai.sync(cellId, 'toCode', context);
+          // Determine which description to use for code generation
+          const description = cell.fullDescription?.trim() || cell.shortDescription?.trim();
+          const syncResult = await window.promptbook.ai.sync(cellId, 'fullToCode', {
+            newContent: description || '',
+            previousContent: cell.lastSyncedFull,
+            existingCounterpart: cell.code,
+          });
 
           if (syncResult.success && syncResult.result) {
             const generatedCode = syncResult.result;
             handleUpdate(cellId, {
               code: generatedCode,
-              lastSyncedInstructions: cell.instructions!.text.trim(),
               lastSyncedCode: generatedCode,
               isDirty: false,
               isSyncing: false,
             });
-            // Update cell reference for execution
             cell = { ...cell, code: generatedCode };
           } else {
             handleUpdate(cellId, { isSyncing: false });
@@ -322,57 +343,25 @@ export function App() {
         }
       }
 
-      // If we have instructions but no code, generate code first
-      if (hasInstructions && !hasCode) {
-        // Generate code from instructions
+      // If we have description but no code, generate code first
+      if (hasDescription && !hasCode) {
         handleUpdate(cellId, { isSyncing: true });
 
         try {
-          const context = {
-            newContent: cell.instructions!.text.trim(),
-            previousContent: cell.lastSyncedInstructions,
+          const description = cell.fullDescription?.trim() || cell.shortDescription?.trim();
+          const syncResult = await window.promptbook.ai.sync(cellId, 'fullToCode', {
+            newContent: description || '',
             existingCounterpart: cell.code,
-          };
-
-          const syncResult = await window.promptbook.ai.sync(cellId, 'toCode', context);
+          });
 
           if (syncResult.success && syncResult.result) {
             const generatedCode = syncResult.result;
-
-            // Update cell with generated code
             handleUpdate(cellId, {
               code: generatedCode,
-              lastSyncedInstructions: cell.instructions!.text.trim(),
               lastSyncedCode: generatedCode,
               isDirty: false,
+              isSyncing: false,
             });
-
-            // Now generate proper instructions from the code (to replace raw prompt)
-            // Don't pass existingCounterpart - we want fresh instructions, not modifications to raw prompt
-            console.log('[Run] Generating instructions from code...');
-            const instructionsContext = {
-              newContent: generatedCode,
-              previousContent: undefined,
-              existingCounterpart: undefined, // Fresh generation, not minimal modifications
-            };
-
-            const instructionsResult = await window.promptbook.ai.sync(cellId, 'toInstructions', instructionsContext);
-            console.log('[Run] Instructions result:', instructionsResult);
-
-            if (instructionsResult.success && instructionsResult.result) {
-              console.log('[Run] Updating instructions to:', instructionsResult.result);
-              handleUpdate(cellId, {
-                instructions: { text: instructionsResult.result, parameters: cell.instructions?.parameters || [] },
-                isSyncing: false,
-                lastSyncedCode: generatedCode,
-                lastSyncedInstructions: instructionsResult.result,
-              });
-            } else {
-              console.log('[Run] Instructions generation failed or empty');
-              handleUpdate(cellId, { isSyncing: false });
-            }
-
-            // Re-fetch the cell with updated code
             cell = { ...cell, code: generatedCode };
           } else {
             handleUpdate(cellId, { isSyncing: false });
@@ -401,7 +390,6 @@ export function App() {
         }
 
         if (result.success && result.outputs) {
-          // Convert kernel outputs to cell outputs
           const cellOutputs: CellOutput[] = result.outputs.map((output) => ({
             type: output.type as CellOutput['type'],
             content: output.content,
@@ -447,73 +435,111 @@ export function App() {
   const handleSyncCell = useCallback(
     async (cellId: string) => {
       const cell = notebook.cells.find((c) => c.id === cellId);
-      if (!cell) return;
+      if (!cell || cell.cellType === 'text') return;
 
-      const direction =
-        cell.lastEditedTab === 'instructions' ? 'toCode' : 'toInstructions';
+      // Determine sync direction based on last edited tab
+      // short -> sync to full and code
+      // full -> sync to short and code
+      // code -> sync to short and full
+      const lastEdited = cell.lastEditedTab || 'short';
 
-      // Get the new content (what was just edited)
-      const newContent = direction === 'toCode'
-        ? (cell.instructions?.text || '')
-        : cell.code;
-
-      if (!newContent.trim()) {
-        setGlobalError('No content to sync');
-        return;
-      }
-
-      // Check cache: skip AI call if content hasn't changed since last sync
-      if (direction === 'toCode' && cell.lastSyncedInstructions === newContent.trim()) {
-        handleUpdate(cellId, { isDirty: false });
-        return;
-      }
-      if (direction === 'toInstructions' && cell.lastSyncedCode === newContent.trim()) {
-        handleUpdate(cellId, { isDirty: false });
-        return;
-      }
-
-      // Build context for incremental sync
-      const context = {
-        newContent: newContent.trim(),
-        // Previous content is what we last synced (before this edit)
-        previousContent: direction === 'toCode'
-          ? cell.lastSyncedInstructions
-          : cell.lastSyncedCode,
-        // Existing counterpart is the current value of the other side
-        existingCounterpart: direction === 'toCode'
-          ? cell.code
-          : cell.instructions?.text,
-      };
-
-      // Set syncing state to show progress overlay
+      // Set syncing state
       handleUpdate(cellId, { isSyncing: true });
 
       try {
-        const result = await window.promptbook.ai.sync(cellId, direction, context);
+        if (lastEdited === 'code') {
+          // Code changed: generate short and full from code
+          const codeContent = cell.code?.trim();
+          if (!codeContent) {
+            handleUpdate(cellId, { isSyncing: false });
+            return;
+          }
 
-        if (result.success && result.result) {
-          if (direction === 'toCode') {
-            handleUpdate(cellId, {
-              code: result.result,
-              isDirty: false,
-              isSyncing: false,
-              lastSyncedInstructions: newContent.trim(),
-              lastSyncedCode: result.result, // Cache the generated code too
-            });
-          } else {
-            handleUpdate(cellId, {
-              instructions: { text: result.result, parameters: cell.instructions?.parameters || [] },
-              isDirty: false,
-              isSyncing: false,
-              lastSyncedCode: newContent.trim(),
-              lastSyncedInstructions: result.result, // Cache the generated instructions too
-            });
+          // Generate short description from code
+          const shortResult = await window.promptbook.ai.sync(cellId, 'codeToShort', {
+            newContent: codeContent,
+            previousContent: cell.lastSyncedCode,
+            existingCounterpart: cell.shortDescription,
+          });
+
+          // Generate full description from code
+          const fullResult = await window.promptbook.ai.sync(cellId, 'codeToFull', {
+            newContent: codeContent,
+            previousContent: cell.lastSyncedCode,
+            existingCounterpart: cell.fullDescription,
+          });
+
+          handleUpdate(cellId, {
+            shortDescription: shortResult.success ? shortResult.result || '' : cell.shortDescription,
+            fullDescription: fullResult.success ? fullResult.result || '' : cell.fullDescription,
+            lastSyncedCode: codeContent,
+            lastSyncedShort: shortResult.success ? shortResult.result : cell.lastSyncedShort,
+            lastSyncedFull: fullResult.success ? fullResult.result : cell.lastSyncedFull,
+            isDirty: false,
+            isSyncing: false,
+          });
+        } else if (lastEdited === 'short') {
+          // Short changed: generate full and code from short
+          const shortContent = cell.shortDescription?.trim();
+          if (!shortContent) {
+            handleUpdate(cellId, { isSyncing: false });
+            return;
           }
+
+          // Generate code from short
+          const codeResult = await window.promptbook.ai.sync(cellId, 'shortToCode', {
+            newContent: shortContent,
+            previousContent: cell.lastSyncedShort,
+            existingCounterpart: cell.code,
+          });
+
+          // Generate full from short
+          const fullResult = await window.promptbook.ai.sync(cellId, 'shortToFull', {
+            newContent: shortContent,
+            previousContent: cell.lastSyncedShort,
+            existingCounterpart: cell.fullDescription,
+          });
+
+          handleUpdate(cellId, {
+            code: codeResult.success ? codeResult.result || '' : cell.code,
+            fullDescription: fullResult.success ? fullResult.result || '' : cell.fullDescription,
+            lastSyncedShort: shortContent,
+            lastSyncedCode: codeResult.success ? codeResult.result : cell.lastSyncedCode,
+            lastSyncedFull: fullResult.success ? fullResult.result : cell.lastSyncedFull,
+            isDirty: false,
+            isSyncing: false,
+          });
         } else {
-          handleUpdate(cellId, { isSyncing: false });
-          if (result.error) {
-            setGlobalError(result.error);
+          // Full changed: generate short and code from full
+          const fullContent = cell.fullDescription?.trim();
+          if (!fullContent) {
+            handleUpdate(cellId, { isSyncing: false });
+            return;
           }
+
+          // Generate code from full
+          const codeResult = await window.promptbook.ai.sync(cellId, 'fullToCode', {
+            newContent: fullContent,
+            previousContent: cell.lastSyncedFull,
+            existingCounterpart: cell.code,
+          });
+
+          // Generate short from full
+          const shortResult = await window.promptbook.ai.sync(cellId, 'fullToShort', {
+            newContent: fullContent,
+            previousContent: cell.lastSyncedFull,
+            existingCounterpart: cell.shortDescription,
+          });
+
+          handleUpdate(cellId, {
+            code: codeResult.success ? codeResult.result || '' : cell.code,
+            shortDescription: shortResult.success ? shortResult.result || '' : cell.shortDescription,
+            lastSyncedFull: fullContent,
+            lastSyncedCode: codeResult.success ? codeResult.result : cell.lastSyncedCode,
+            lastSyncedShort: shortResult.success ? shortResult.result : cell.lastSyncedShort,
+            isDirty: false,
+            isSyncing: false,
+          });
         }
       } catch (error) {
         handleUpdate(cellId, { isSyncing: false });
@@ -523,8 +549,10 @@ export function App() {
     [notebook.cells, handleUpdate]
   );
 
-  const handleAddCell = useCallback((afterCellId?: string) => {
-    const newCell = createEmptyCell(`cell-${Date.now()}`);
+  const handleAddCell = useCallback((afterCellId?: string, cellType: CellType = 'code') => {
+    const newCell = cellType === 'text'
+      ? createTextCell(`cell-${Date.now()}`)
+      : createCodeCell(`cell-${Date.now()}`);
     setNotebook((prev) => {
       if (!afterCellId) {
         return { ...prev, cells: [...prev.cells, newCell] };
@@ -536,70 +564,28 @@ export function App() {
     });
   }, []);
 
+  const handleMoveCell = useCallback((cellId: string, direction: 'up' | 'down') => {
+    setNotebook((prev) => {
+      const index = prev.cells.findIndex((c) => c.id === cellId);
+      if (index === -1) return prev;
+
+      const newIndex = direction === 'up' ? index - 1 : index + 1;
+      if (newIndex < 0 || newIndex >= prev.cells.length) return prev;
+
+      const newCells = [...prev.cells];
+      const [movedCell] = newCells.splice(index, 1);
+      newCells.splice(newIndex, 0, movedCell);
+
+      return { ...prev, cells: newCells };
+    });
+  }, []);
+
   const handleDeleteCell = useCallback((cellId: string) => {
     setNotebook((prev) => ({
       ...prev,
       cells: prev.cells.filter((c) => c.id !== cellId),
     }));
   }, []);
-
-  const handleExpandInstructions = useCallback(
-    async (cellId: string) => {
-      const cell = notebook.cells.find((c) => c.id === cellId);
-      if (!cell?.instructions?.text) return;
-
-      handleUpdate(cellId, { isSyncing: true });
-
-      try {
-        const result = await window.promptbook.ai.sync(cellId, 'expandInstructions', {
-          newContent: cell.instructions.text,
-        });
-
-        if (result.success && result.result) {
-          handleUpdate(cellId, {
-            instructions: { text: result.result, parameters: cell.instructions.parameters || [] },
-            isSyncing: false,
-          });
-        } else {
-          handleUpdate(cellId, { isSyncing: false });
-          if (result.error) setGlobalError(result.error);
-        }
-      } catch (error) {
-        handleUpdate(cellId, { isSyncing: false });
-        setGlobalError(String(error));
-      }
-    },
-    [notebook.cells, handleUpdate]
-  );
-
-  const handleShortenInstructions = useCallback(
-    async (cellId: string) => {
-      const cell = notebook.cells.find((c) => c.id === cellId);
-      if (!cell?.instructions?.text) return;
-
-      handleUpdate(cellId, { isSyncing: true });
-
-      try {
-        const result = await window.promptbook.ai.sync(cellId, 'shortenInstructions', {
-          newContent: cell.instructions.text,
-        });
-
-        if (result.success && result.result) {
-          handleUpdate(cellId, {
-            instructions: { text: result.result, parameters: cell.instructions.parameters || [] },
-            isSyncing: false,
-          });
-        } else {
-          handleUpdate(cellId, { isSyncing: false });
-          if (result.error) setGlobalError(result.error);
-        }
-      } catch (error) {
-        handleUpdate(cellId, { isSyncing: false });
-        setGlobalError(String(error));
-      }
-    },
-    [notebook.cells, handleUpdate]
-  );
 
   const handleOpen = async () => {
     const path = await window.promptbook.file.open();
@@ -631,7 +617,7 @@ export function App() {
     <div className="app">
       <header className="app-header">
         <div className="app-brand">
-          <span className="app-logo">{Icons.sparkles}</span>
+          <span className="app-logo">{Icons.logo}</span>
           <h1>Promptbook</h1>
           {fileName && <span className="app-filename">{fileName}</span>}
         </div>
@@ -664,8 +650,7 @@ export function App() {
           onSyncCell={handleSyncCell}
           onAddCell={handleAddCell}
           onDeleteCell={handleDeleteCell}
-          onExpandInstructions={handleExpandInstructions}
-          onShortenInstructions={handleShortenInstructions}
+          onMoveCell={handleMoveCell}
           activeCellId={activeCellId || undefined}
           onCellFocus={setActiveCellId}
         />
