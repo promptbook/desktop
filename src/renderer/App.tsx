@@ -1075,8 +1075,25 @@ export function App() {
 
   const handleSyncCell = useCallback(
     async (cellId: string) => {
-      const cell = notebook.cells.find((c) => c.id === cellId);
+      const cellIndex = notebook.cells.findIndex((c) => c.id === cellId);
+      const cell = notebook.cells[cellIndex];
       if (!cell || cell.cellType === 'text') return;
+
+      // Gather context from surrounding cells (for code generation)
+      const cellsBefore = notebook.cells
+        .slice(0, cellIndex)
+        .filter((c) => c.cellType === 'code')
+        .map((c) => ({
+          shortDescription: c.shortDescription || '',
+          code: c.code || '',
+        }));
+      const cellsAfter = notebook.cells
+        .slice(cellIndex + 1)
+        .filter((c) => c.cellType === 'code')
+        .map((c) => ({
+          shortDescription: c.shortDescription || '',
+          code: c.code || '',
+        }));
 
       // Determine sync direction based on last edited tab
       // short -> sync to full and code
@@ -1096,14 +1113,14 @@ export function App() {
             return;
           }
 
-          // Generate short description from code
+          // Generate short description from code (no cell context needed)
           const shortResult = await window.promptbook.ai.sync(cellId, 'codeToShort', {
             newContent: codeContent,
             previousContent: cell.lastSyncedCode,
             existingCounterpart: cell.shortDescription,
           });
 
-          // Generate full description from code
+          // Generate full description from code (no cell context needed)
           const fullResult = await window.promptbook.ai.sync(cellId, 'codeToFull', {
             newContent: codeContent,
             previousContent: cell.lastSyncedCode,
@@ -1127,11 +1144,13 @@ export function App() {
             return;
           }
 
-          // Generate code from short
+          // Generate code from short (include surrounding cells context)
           const codeResult = await window.promptbook.ai.sync(cellId, 'shortToCode', {
             newContent: shortContent,
             previousContent: cell.lastSyncedShort,
             existingCounterpart: cell.code,
+            cellsBefore,
+            cellsAfter,
           });
 
           // Generate full from short
@@ -1158,11 +1177,13 @@ export function App() {
             return;
           }
 
-          // Generate code from full
+          // Generate code from full (include surrounding cells context)
           const codeResult = await window.promptbook.ai.sync(cellId, 'fullToCode', {
             newContent: fullContent,
             previousContent: cell.lastSyncedFull,
             existingCounterpart: cell.code,
+            cellsBefore,
+            cellsAfter,
           });
 
           // Generate short from full
