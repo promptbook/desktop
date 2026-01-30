@@ -14,7 +14,15 @@ import {
   Variable,
   FindReplace,
   SearchMatch,
+  PackageInstallModal,
+  InstallAction,
 } from '@promptbook/core/ui';
+import {
+  detectMissingPackages,
+  generatePipInstallCommand,
+  countPipInstalls,
+  MissingPackage,
+} from '@promptbook/core/utils';
 import { Settings, AppSettings, defaultSettings } from './Settings';
 
 // Types for kernel
@@ -306,6 +314,15 @@ export function App() {
   const [isInstallingIpykernel, setIsInstallingIpykernel] = useState(false);
   const [isCreatingVenv, setIsCreatingVenv] = useState(false);
   const [installError, setInstallError] = useState<string | null>(null);
+
+  // Package installation modal state
+  const [packageInstallModal, setPackageInstallModal] = useState<{
+    isOpen: boolean;
+    packages: MissingPackage[];
+    cellId: string;
+  }>({ isOpen: false, packages: [], cellId: '' });
+  const [isInstallingPackages, setIsInstallingPackages] = useState(false);
+  const [packageInstallError, setPackageInstallError] = useState<string | null>(null);
   const [globalError, setGlobalError] = useState<string | null>(null);
 
   // Active cell tracking for keyboard shortcuts
@@ -487,6 +504,83 @@ export function App() {
 
   const handleRestart = async () => {
     await window.promptbook.kernel.restart();
+  };
+
+  // Handle package installation from the modal
+  const handleInstallPackages = async (packages: string[], action: InstallAction) => {
+    setIsInstallingPackages(true);
+    setPackageInstallError(null);
+
+    try {
+      const pipCommand = generatePipInstallCommand(packages, action !== 'once');
+
+      if (action === 'once') {
+        // Execute pip install directly in kernel (won't persist)
+        const result = await window.promptbook.kernel.execute(`!${pipCommand.replace('!', '')}`);
+        if (!result.success) {
+          setPackageInstallError(result.error || 'Failed to install packages');
+          return;
+        }
+      } else if (action === 'current-cell') {
+        // Add pip install to the beginning of the current cell
+        const cell = notebook.cells.find(c => c.id === packageInstallModal.cellId);
+        if (cell) {
+          const newCode = `${pipCommand}\n\n${cell.code || ''}`;
+          setNotebook(prev => ({
+            ...prev,
+            cells: prev.cells.map(c =>
+              c.id === packageInstallModal.cellId ? { ...c, code: newCode } : c
+            ),
+          }));
+        }
+      } else if (action === 'setup-cell') {
+        // Find or create a setup cell
+        // Priority 1: Find cell with multiple pip installs
+        const cellWithManyPips = notebook.cells.find(
+          c => c.cellType === 'code' && countPipInstalls(c.code || '') >= 2
+        );
+
+        if (cellWithManyPips) {
+          // Append to existing setup cell
+          const newCode = `${cellWithManyPips.code}\n${pipCommand}`;
+          setNotebook(prev => ({
+            ...prev,
+            cells: prev.cells.map(c =>
+              c.id === cellWithManyPips.id ? { ...c, code: newCode } : c
+            ),
+          }));
+        } else {
+          // Create or use cell 0
+          const firstCell = notebook.cells[0];
+          if (firstCell?.cellType === 'code' && countPipInstalls(firstCell.code || '') > 0) {
+            // Cell 0 already has pip installs, append
+            const newCode = `${firstCell.code}\n${pipCommand}`;
+            setNotebook(prev => ({
+              ...prev,
+              cells: prev.cells.map((c, i) =>
+                i === 0 ? { ...c, code: newCode } : c
+              ),
+            }));
+          } else {
+            // Create new setup cell at position 0
+            const setupCell = createCodeCell(`cell-setup-${Date.now()}`);
+            setupCell.shortDescription = 'Install required packages';
+            setupCell.code = `# Setup - Install required packages\n${pipCommand}`;
+            setNotebook(prev => ({
+              ...prev,
+              cells: [setupCell, ...prev.cells],
+            }));
+          }
+        }
+      }
+
+      // Close modal on success
+      setPackageInstallModal({ isOpen: false, packages: [], cellId: '' });
+    } catch (error) {
+      setPackageInstallError(String(error));
+    } finally {
+      setIsInstallingPackages(false);
+    }
   };
 
   const handleUpdate = useCallback(
@@ -728,6 +822,26 @@ export function App() {
             mimeType: output.mimeType,
           }));
 
+          // Check for missing package errors
+          const detection = detectMissingPackages(cellOutputs);
+          if (detection?.hasMissingPackages) {
+            // Show package install modal instead of just displaying error
+            handleUpdate(cellId, {
+              isExecuting: false,
+              outputs: cellOutputs,
+              executionStartTime: undefined,
+              lastExecutionTime: executionTime,
+              lastExecutionSuccess: false,
+            });
+            setPackageInstallModal({
+              isOpen: true,
+              packages: detection.packages,
+              cellId,
+            });
+            setPackageInstallError(null);
+            return;
+          }
+
           handleUpdate(cellId, {
             isExecuting: false,
             outputs: cellOutputs,
@@ -736,9 +850,29 @@ export function App() {
             lastExecutionSuccess: true,
           });
         } else {
+          // Check if the error message contains missing package info
+          const errorOutputs: CellOutput[] = [{ type: 'error', content: result.error || 'Execution failed' }];
+          const detection = detectMissingPackages(errorOutputs);
+          if (detection?.hasMissingPackages) {
+            handleUpdate(cellId, {
+              isExecuting: false,
+              outputs: errorOutputs,
+              executionStartTime: undefined,
+              lastExecutionTime: executionTime,
+              lastExecutionSuccess: false,
+            });
+            setPackageInstallModal({
+              isOpen: true,
+              packages: detection.packages,
+              cellId,
+            });
+            setPackageInstallError(null);
+            return;
+          }
+
           handleUpdate(cellId, {
             isExecuting: false,
-            outputs: [{ type: 'error', content: result.error || 'Execution failed' }],
+            outputs: errorOutputs,
             executionStartTime: undefined,
             lastExecutionTime: executionTime,
             lastExecutionSuccess: false,
@@ -1483,6 +1617,17 @@ export function App() {
         isInstalling={isInstallingIpykernel}
         isCreatingVenv={isCreatingVenv}
         installError={installError}
+      />
+      <PackageInstallModal
+        isOpen={packageInstallModal.isOpen}
+        onClose={() => {
+          setPackageInstallModal({ isOpen: false, packages: [], cellId: '' });
+          setPackageInstallError(null);
+        }}
+        packages={packageInstallModal.packages}
+        onInstall={handleInstallPackages}
+        isInstalling={isInstallingPackages}
+        installError={packageInstallError}
       />
       {globalError && (
         <div className="error-toast">
