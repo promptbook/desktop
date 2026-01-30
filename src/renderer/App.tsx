@@ -502,6 +502,29 @@ export function App() {
     []
   );
 
+  // Save a version to git (defined before handleRunCell which depends on it)
+  const handleSaveVersion = useCallback(async (message: string) => {
+    const content = JSON.stringify(notebook, null, 2);
+    await window.promptbook.version.save(notebookId, content, message);
+    const canUndoResult = await window.promptbook.version.canUndo(notebookId);
+    setCanUndo(canUndoResult.canUndo);
+  }, [notebook, notebookId]);
+
+  // Undo to previous version
+  const handleUndo = useCallback(async () => {
+    const result = await window.promptbook.version.undo(notebookId);
+    if (result.success && result.content) {
+      try {
+        const restored = JSON.parse(result.content);
+        setNotebook(restored);
+        const canUndoResult = await window.promptbook.version.canUndo(notebookId);
+        setCanUndo(canUndoResult.canUndo);
+      } catch {
+        setGlobalError('Failed to restore version');
+      }
+    }
+  }, [notebookId]);
+
   const handleRunCell = useCallback(
     async (cellId: string) => {
       let cell = notebook.cells.find((c) => c.id === cellId);
@@ -1229,29 +1252,6 @@ export function App() {
       // Could show a success toast here
     }
   };
-
-  // Save a version to git
-  const handleSaveVersion = useCallback(async (message: string) => {
-    const content = JSON.stringify(notebook, null, 2);
-    await window.promptbook.version.save(notebookId, content, message);
-    const canUndoResult = await window.promptbook.version.canUndo(notebookId);
-    setCanUndo(canUndoResult.canUndo);
-  }, [notebook, notebookId]);
-
-  // Undo to previous version
-  const handleUndo = useCallback(async () => {
-    const result = await window.promptbook.version.undo(notebookId);
-    if (result.success && result.content) {
-      try {
-        const restored = JSON.parse(result.content);
-        setNotebook(restored);
-        const canUndoResult = await window.promptbook.version.canUndo(notebookId);
-        setCanUndo(canUndoResult.canUndo);
-      } catch {
-        setGlobalError('Failed to restore version');
-      }
-    }
-  }, [notebookId]);
 
   // Find & Replace handlers
   const handleSearch = useCallback((query: string, caseSensitive: boolean, useRegex: boolean): SearchMatch[] => {
