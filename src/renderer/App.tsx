@@ -621,7 +621,8 @@ export function App() {
 
   const handleRunCell = useCallback(
     async (cellId: string) => {
-      let cell = notebook.cells.find((c) => c.id === cellId);
+      const cellIndex = notebook.cells.findIndex((c) => c.id === cellId);
+      let cell = notebook.cells[cellIndex];
       if (!cell || cell.cellType === 'text') return;
 
       // Check if we have a kernel
@@ -631,6 +632,22 @@ export function App() {
         setEnvironmentPickerOpen(true);
         return;
       }
+
+      // Gather context from surrounding cells for code generation
+      const cellsBefore = notebook.cells
+        .slice(0, cellIndex)
+        .filter((c) => c.cellType === 'code')
+        .map((c) => ({
+          shortDescription: c.shortDescription || '',
+          code: c.code || '',
+        }));
+      const cellsAfter = notebook.cells
+        .slice(cellIndex + 1)
+        .filter((c) => c.cellType === 'code')
+        .map((c) => ({
+          shortDescription: c.shortDescription || '',
+          code: c.code || '',
+        }));
 
       const hasDescription = cell.shortDescription?.trim() || cell.fullDescription?.trim();
       const hasCode = cell.code?.trim();
@@ -679,6 +696,8 @@ export function App() {
             newContent: description || '',
             previousContent: cell.lastSyncedFull,
             existingCounterpart: cell.code,
+            cellsBefore,
+            cellsAfter,
           });
 
           if (syncResult.success && syncResult.result) {
@@ -740,6 +759,8 @@ export function App() {
           const syncResult = await window.promptbook.ai.sync(cellId, 'fullToCode', {
             newContent: description || '',
             existingCounterpart: cell.code,
+            cellsBefore,
+            cellsAfter,
           });
 
           if (syncResult.success && syncResult.result) {
