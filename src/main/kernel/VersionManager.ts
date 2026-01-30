@@ -1,4 +1,4 @@
-import { exec, execSync } from 'child_process';
+import { exec } from 'child_process';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -77,7 +77,7 @@ export class VersionManager {
       await this.execGit(`commit -m "${message.replace(/"/g, '\\"')}"`);
       const hash = await this.execGit('rev-parse HEAD');
       return hash;
-    } catch (error) {
+    } catch {
       // If nothing to commit, return current HEAD
       const hash = await this.execGit('rev-parse HEAD');
       return hash;

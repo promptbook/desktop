@@ -5,7 +5,7 @@ interface EmptyStateProps {
   onOpenSidebar?: () => void;
 }
 
-export function EmptyState({ onOpenSidebar }: EmptyStateProps) {
+export function EmptyState({ onOpenSidebar: _onOpenSidebar }: EmptyStateProps) {
   return (
     <div className="empty-state">
       <div className="empty-state__content">

@@ -10,7 +10,7 @@ export function FloatingSidebar({ onFileSelect }: FloatingSidebarProps) {
   const { state: sessionState, setSidebarVisible, pinSidebar, resizeSidebar } = useSession();
   const { state: projectState, listFiles, createFile, createFolder, deleteFile, renameFile } = useProject();
 
-  const [isHovering, setIsHovering] = useState(false);
+  const [, setIsHovering] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -28,13 +28,6 @@ export function FloatingSidebar({ onFileSelect }: FloatingSidebarProps) {
   const isPinned = sidebar?.isPinned || false;
   const width = sidebar?.width || 280;
 
-  // Load root files on mount
-  useEffect(() => {
-    if (projectState.currentProject) {
-      loadFiles('');
-    }
-  }, [projectState.currentProject?.id]);
-
   const loadFiles = useCallback(async (relativePath: string) => {
     const entries = await listFiles(relativePath);
     if (relativePath === '') {
@@ -43,6 +36,13 @@ export function FloatingSidebar({ onFileSelect }: FloatingSidebarProps) {
       setFolderContents((prev) => new Map(prev).set(relativePath, entries));
     }
   }, [listFiles]);
+
+  // Load root files on mount
+  useEffect(() => {
+    if (projectState.currentProject) {
+      loadFiles('');
+    }
+  }, [projectState.currentProject, loadFiles]);
 
   const handleTriggerEnter = useCallback(() => {
     if (!isPinned) {

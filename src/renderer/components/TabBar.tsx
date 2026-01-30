@@ -7,7 +7,7 @@ interface TabBarProps {
 }
 
 export function TabBar({ onNewNotebook }: TabBarProps) {
-  const { state, setActiveTab, removeTab, reorderTabs, getActiveTab } = useSession();
+  const { state, setActiveTab, removeTab, reorderTabs } = useSession();
   const [showOverflow, setShowOverflow] = useState(false);
   const [hoveredTab, setHoveredTab] = useState<string | null>(null);
   const [draggedTab, setDraggedTab] = useState<{ id: string; index: number } | null>(null);
@@ -64,7 +64,7 @@ export function TabBar({ onNewNotebook }: TabBarProps) {
     setDraggedTab({ id: tab.id, index });
   }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent, targetIndex: number) => {
+  const handleDragOver = useCallback((e: React.DragEvent, _targetIndex: number) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
   }, []);

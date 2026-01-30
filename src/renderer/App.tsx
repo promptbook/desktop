@@ -1,3 +1,10 @@
+/* eslint-disable max-lines */
+// TODO: This file needs to be refactored into smaller components/hooks
+// Technical debt: App.tsx is 1400+ lines, should be split into:
+// - useKernel hook for kernel state management
+// - useNotebook hook for notebook operations
+// - useFindReplace hook for search/replace
+// - Smaller component files for header, toolbar, etc.
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Notebook,
@@ -314,15 +321,19 @@ interface AppProps {
   onOpenSettings?: () => void;
 }
 
-export function App({ projectId, filePath: initialFilePath, onOpenSettings }: AppProps = {}) {
+export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onOpenSettings }: AppProps = {}) {
   const [notebook, setNotebook] = useState<NotebookState>(createEmptyNotebook());
   const [filePath, setFilePath] = useState<string | null>(initialFilePath || null);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  // Track current file path to avoid re-loading the same file
+  const currentFileRef = useRef<string | null>(initialFilePath || null);
+
   // Load file when filePath prop changes (project mode)
   useEffect(() => {
-    if (projectId && initialFilePath && initialFilePath !== filePath) {
+    if (projectId && initialFilePath && initialFilePath !== currentFileRef.current) {
+      currentFileRef.current = initialFilePath;
       // Load file from project
       window.promptbook.project.readFile(projectId, initialFilePath).then((result) => {
         if (result.success && result.content) {
@@ -375,6 +386,7 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings }: Ap
 
   // Auto-save state
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const autoSaveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -1275,6 +1287,7 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings }: Ap
       window.removeEventListener('keydown', handleKeyDown);
       clearTimeout(deleteTimeout);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCellId, commandMode, notebook.cells, handleRunCell, handleAddCell, handleAddCellAbove, handleDeleteCell, handleCopyCell, handleCutCell, handlePasteCell, handleRunAllCells, handleUpdate, canUndo, handleUndo]);
 
   const handleSyncCell = useCallback(

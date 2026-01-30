@@ -123,12 +123,6 @@ interface ProjectProviderProps {
 export function ProjectProvider({ children }: ProjectProviderProps) {
   const [state, dispatch] = useReducer(projectReducer, initialState);
 
-  // Load projects and settings on mount
-  useEffect(() => {
-    loadProjects();
-    loadSettings();
-  }, []);
-
   const loadSettings = useCallback(async () => {
     try {
       const result = await window.promptbook.project.getSettings();
@@ -160,6 +154,12 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
   }, []);
+
+  // Load projects and settings on mount
+  useEffect(() => {
+    loadProjects();
+    loadSettings();
+  }, [loadProjects, loadSettings]);
 
   const createProject = useCallback(async (name: string, customPath?: string): Promise<Project | null> => {
     try {

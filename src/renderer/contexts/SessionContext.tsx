@@ -126,8 +126,15 @@ export function SessionProvider({ children }: SessionProviderProps) {
     // Check if tab already exists
     const existingTab = state.session?.openTabs.find(t => t.filePath === filePath);
     if (existingTab) {
-      // Just activate the existing tab
-      await setActiveTab(existingTab.id);
+      // Just activate the existing tab (inline to avoid dependency cycle)
+      try {
+        const result = await window.promptbook.session.setActiveTab(projectId, existingTab.id);
+        if (result.success && result.session) {
+          dispatch({ type: 'SET_SESSION', payload: result.session });
+        }
+      } catch (err) {
+        console.error('Failed to set active tab:', err);
+      }
       return existingTab.id;
     }
 

@@ -7,7 +7,7 @@ import './AppWrapper.css';
 
 // Inner component that uses the contexts
 function AppContent() {
-  const { state: projectState, closeProject, openProject } = useProject();
+  const { state: projectState } = useProject();
   const { state: sessionState, addTab, getActiveTab } = useSession();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
