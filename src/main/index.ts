@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, session, Menu, clipboard } from 'electron'
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as yaml from 'yaml';
-import { KernelManager, PythonSetup, PythonEnvironment, KernelOutput } from './kernel';
+import { KernelManager, PythonSetup, PythonEnvironment, KernelOutput, versionManager } from './kernel';
 
 // Electron plugins
 import log from 'electron-log/main';
@@ -401,6 +401,83 @@ ipcMain.handle('kernel:createVenv', async (_event, venvName: string = '.venv') =
   return result;
 });
 
+ipcMain.handle('kernel:getVariables', async () => {
+  if (!kernelManager) {
+    return { success: false, error: 'No kernel running', variables: [] };
+  }
+
+  // Python code to get all user-defined variables with their types and values
+  const code = `
+import json
+import sys
+
+def get_size_str(obj):
+    try:
+        size = sys.getsizeof(obj)
+        if size < 1024:
+            return f"{size} B"
+        elif size < 1024 * 1024:
+            return f"{size / 1024:.1f} KB"
+        else:
+            return f"{size / (1024 * 1024):.1f} MB"
+    except:
+        return None
+
+def get_repr(obj, max_len=200):
+    try:
+        r = repr(obj)
+        if len(r) > max_len:
+            return r[:max_len] + "..."
+        return r
+    except:
+        return "<unable to repr>"
+
+def get_type_name(obj):
+    t = type(obj).__name__
+    # Add shape info for numpy arrays
+    if t == 'ndarray':
+        return f"ndarray{obj.shape}"
+    # Add shape info for DataFrames
+    if t == 'DataFrame':
+        return f"DataFrame({obj.shape[0]}x{obj.shape[1]})"
+    if t == 'Series':
+        return f"Series({len(obj)})"
+    return t
+
+# Get all user-defined variables (exclude builtins and modules)
+_vars = []
+for name, value in list(globals().items()):
+    if name.startswith('_'):
+        continue
+    if name in ['In', 'Out', 'get_ipython', 'exit', 'quit', 'json', 'sys', 'get_size_str', 'get_repr', 'get_type_name']:
+        continue
+    if callable(value) and not hasattr(value, '__self__'):
+        if type(value).__name__ in ['function', 'type', 'module', 'builtin_function_or_method']:
+            continue
+    _vars.append({
+        'name': name,
+        'type': get_type_name(value),
+        'value': get_repr(value),
+        'size': get_size_str(value)
+    })
+
+print(json.dumps(_vars))
+`;
+
+  try {
+    const result = await kernelManager.execute(code);
+    // Find the stdout output that contains our JSON
+    const stdoutOutput = result.outputs.find(o => o.type === 'stdout');
+    if (stdoutOutput) {
+      const variables = JSON.parse(stdoutOutput.content.trim());
+      return { success: true, variables };
+    }
+    return { success: true, variables: [] };
+  } catch (err) {
+    return { success: false, error: String(err), variables: [] };
+  }
+});
+
 // Helper to import ESM modules in CommonJS context
 // eslint-disable-next-line @typescript-eslint/no-implied-eval
 const dynamicImport = new Function('specifier', 'return import(specifier)');
@@ -769,4 +846,139 @@ ipcMain.handle('file:saveAs', async (_event, notebook: unknown) => {
   });
   await fs.writeFile(result.filePath, content, 'utf-8');
   return { success: true, filePath: result.filePath };
+});
+
+// Export notebook as Python script
+interface NotebookCell {
+  cellType: 'code' | 'text';
+  shortDescription?: string;
+  fullDescription?: string;
+  code?: string;
+  textContent?: string;
+}
+
+interface NotebookExport {
+  metadata?: {
+    title?: string;
+    author?: string;
+    created?: string;
+  };
+  cells: NotebookCell[];
+}
+
+ipcMain.handle('file:exportPython', async (_event, notebook: NotebookExport) => {
+  const { dialog } = await import('electron');
+
+  const result = await dialog.showSaveDialog(mainWindow!, {
+    filters: [
+      { name: 'Python Script', extensions: ['py'] },
+    ],
+    defaultPath: 'notebook.py',
+  });
+
+  if (result.canceled || !result.filePath) {
+    return { success: false, filePath: null };
+  }
+
+  // Generate Python file content
+  const lines: string[] = [];
+
+  // Add header comment
+  lines.push('#!/usr/bin/env python3');
+  lines.push('"""');
+  if (notebook.metadata?.title) {
+    lines.push(notebook.metadata.title);
+  } else {
+    lines.push('Exported from Promptbook');
+  }
+  if (notebook.metadata?.author) {
+    lines.push(`Author: ${notebook.metadata.author}`);
+  }
+  if (notebook.metadata?.created) {
+    lines.push(`Created: ${notebook.metadata.created}`);
+  }
+  lines.push(`Exported: ${new Date().toISOString()}`);
+  lines.push('"""');
+  lines.push('');
+
+  // Process each cell
+  for (const cell of notebook.cells) {
+    if (cell.cellType === 'text') {
+      // Convert text cell to docstring/comment
+      if (cell.textContent) {
+        lines.push('# ' + cell.textContent.split('\n').join('\n# '));
+        lines.push('');
+      }
+    } else if (cell.cellType === 'code') {
+      // Add description as comment if available
+      const description = cell.shortDescription || cell.fullDescription;
+      if (description) {
+        lines.push('# ' + description.split('\n').join('\n# '));
+      }
+      // Add the code
+      if (cell.code) {
+        lines.push(cell.code);
+        lines.push('');
+      }
+    }
+  }
+
+  const content = lines.join('\n');
+  await fs.writeFile(result.filePath, content, 'utf-8');
+  return { success: true, filePath: result.filePath };
+});
+
+// ============================================
+// Version Control IPC Handlers
+// ============================================
+
+ipcMain.handle('version:save', async (_event, notebookId: string, content: string, message: string) => {
+  try {
+    const hash = await versionManager.saveVersion(notebookId, content, message);
+    return { success: true, hash };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('version:getHistory', async (_event, notebookId: string) => {
+  try {
+    const history = await versionManager.getHistory(notebookId);
+    return { success: true, history };
+  } catch (err) {
+    return { success: false, error: String(err), history: [] };
+  }
+});
+
+ipcMain.handle('version:undo', async (_event, notebookId: string) => {
+  try {
+    const result = await versionManager.undo(notebookId);
+    if (result) {
+      return { success: true, content: result.content, hash: result.hash };
+    }
+    return { success: false, error: 'No previous version available' };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('version:canUndo', async (_event, notebookId: string) => {
+  try {
+    const canUndo = await versionManager.canUndo(notebookId);
+    return { success: true, canUndo };
+  } catch (err) {
+    return { success: false, error: String(err), canUndo: false };
+  }
+});
+
+ipcMain.handle('version:getVersion', async (_event, notebookId: string, hash: string) => {
+  try {
+    const content = await versionManager.getVersion(notebookId, hash);
+    if (content) {
+      return { success: true, content };
+    }
+    return { success: false, error: 'Version not found' };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
 });

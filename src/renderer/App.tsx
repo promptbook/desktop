@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Notebook,
   NotebookState,
@@ -10,6 +10,10 @@ import {
   createTextCell,
   KernelStatus,
   EnvironmentPicker,
+  VariableInspector,
+  Variable,
+  FindReplace,
+  SearchMatch,
 } from '@promptbook/core/ui';
 import { Settings, AppSettings, defaultSettings } from './Settings';
 
@@ -66,6 +70,11 @@ declare global {
         interrupt: () => Promise<{ success: boolean; error?: string }>;
         restart: () => Promise<{ success: boolean; error?: string }>;
         getStatus: () => Promise<{ state: KernelState; executionCount: number }>;
+        getVariables: () => Promise<{
+          success: boolean;
+          variables: Variable[];
+          error?: string;
+        }>;
         onOutput: (callback: (output: KernelOutput, msgId: string) => void) => () => void;
         onStateChange: (callback: (state: KernelState) => void) => () => void;
         onError: (callback: (error: string) => void) => () => void;
@@ -86,6 +95,7 @@ declare global {
         read: (path: string) => Promise<NotebookState>;
         save: (path: string, notebook: NotebookState) => Promise<{ success: boolean }>;
         saveAs: (notebook: NotebookState) => Promise<{ success: boolean; filePath: string | null }>;
+        exportPython: (notebook: NotebookState) => Promise<{ success: boolean; filePath: string | null }>;
       };
       settings: {
         load: () => Promise<AppSettings>;
@@ -101,6 +111,34 @@ declare global {
         getLanguages: () => Promise<string[]>;
         setLanguages: (languages: string[]) => Promise<{ success: boolean }>;
         addWord: (word: string) => Promise<{ success: boolean }>;
+      };
+      version: {
+        save: (notebookId: string, content: string, message: string) => Promise<{
+          success: boolean;
+          hash?: string;
+          error?: string;
+        }>;
+        getHistory: (notebookId: string) => Promise<{
+          success: boolean;
+          history: Array<{ hash: string; message: string; timestamp: string }>;
+          error?: string;
+        }>;
+        undo: (notebookId: string) => Promise<{
+          success: boolean;
+          content?: string;
+          hash?: string;
+          error?: string;
+        }>;
+        canUndo: (notebookId: string) => Promise<{
+          success: boolean;
+          canUndo: boolean;
+          error?: string;
+        }>;
+        getVersion: (notebookId: string, hash: string) => Promise<{
+          success: boolean;
+          content?: string;
+          error?: string;
+        }>;
       };
     };
   }
@@ -211,6 +249,47 @@ const Icons = {
       <path d="M11 10l1.2 2.4 2.8.4-2 2 .5 2.7-2.5-1.3-2.5 1.3.5-2.7-2-2 2.8-.4L11 10z" fill="currentColor" opacity="0.9" />
     </svg>
   ),
+  runAll: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M4 3l8 5-8 5V3z" fill="currentColor" />
+      <path d="M13 3v10" />
+    </svg>
+  ),
+  clearOutputs: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M3 3l10 10M13 3L3 13" />
+    </svg>
+  ),
+  chevronDown: (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M3 4.5l3 3 3-3" />
+    </svg>
+  ),
+  variables: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M3 4h10M3 8h7M3 12h4" />
+      <circle cx="12" cy="8" r="2" />
+      <circle cx="10" cy="12" r="2" />
+    </svg>
+  ),
+  export: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M8 2v9M4 7l4-5 4 5" />
+      <path d="M3 11v2a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-2" />
+    </svg>
+  ),
+  undo: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M3 6h7a4 4 0 0 1 0 8H8" />
+      <path d="M6 3L3 6l3 3" />
+    </svg>
+  ),
+  search: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="7" cy="7" r="4" />
+      <path d="M10 10l3 3" />
+    </svg>
+  ),
 };
 
 export function App() {
@@ -231,6 +310,23 @@ export function App() {
 
   // Active cell tracking for keyboard shortcuts
   const [activeCellId, setActiveCellId] = useState<string | null>(null);
+  const [copiedCell, setCopiedCell] = useState<CellState | null>(null);
+  const [commandMode, setCommandMode] = useState(true); // true = command mode, false = edit mode
+
+  // Variable inspector
+  const [variableInspectorOpen, setVariableInspectorOpen] = useState(false);
+
+  // Version control
+  const [canUndo, setCanUndo] = useState(false);
+  const notebookId = filePath ? filePath.replace(/[^a-zA-Z0-9]/g, '_') : `untitled_${Date.now()}`;
+
+  // Find & Replace
+  const [findReplaceOpen, setFindReplaceOpen] = useState(false);
+
+  // Auto-save state
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const autoSaveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load settings and environments on mount, auto-connect to best venv
   useEffect(() => {
@@ -268,6 +364,46 @@ export function App() {
       setActiveCellId(notebook.cells[0].id);
     }
   }, [notebook.cells, activeCellId]);
+
+  // Track notebook changes for auto-save
+  const lastNotebookStateRef = useRef<string>(JSON.stringify(notebook));
+  useEffect(() => {
+    const currentState = JSON.stringify(notebook);
+    if (currentState !== lastNotebookStateRef.current) {
+      setHasUnsavedChanges(true);
+    }
+    lastNotebookStateRef.current = currentState;
+  }, [notebook]);
+
+  // Auto-save every 30 seconds
+  useEffect(() => {
+    const autoSave = async () => {
+      if (hasUnsavedChanges && filePath) {
+        try {
+          await window.promptbook.file.save(filePath, notebook);
+          setHasUnsavedChanges(false);
+          setLastSavedAt(new Date());
+        } catch (error) {
+          console.error('Auto-save failed:', error);
+        }
+      }
+    };
+
+    // Clear existing interval
+    if (autoSaveIntervalRef.current) {
+      clearInterval(autoSaveIntervalRef.current);
+    }
+
+    // Set up new interval (30 seconds)
+    autoSaveIntervalRef.current = setInterval(autoSave, 30000);
+
+    // Cleanup on unmount
+    return () => {
+      if (autoSaveIntervalRef.current) {
+        clearInterval(autoSaveIntervalRef.current);
+      }
+    };
+  }, [hasUnsavedChanges, filePath, notebook]);
 
   // Set up kernel event listeners
   useEffect(() => {
@@ -461,6 +597,9 @@ export function App() {
               isSyncing: false,
             });
             cell = { ...cell, code: generatedCode, shortDescription: newShort, fullDescription: newFull };
+
+            // Save version after AI sync
+            handleSaveVersion(`AI sync: ${newShort.slice(0, 50)}`);
           } else {
             handleUpdate(cellId, { isSyncing: false });
             if (syncResult.error) {
@@ -519,6 +658,9 @@ export function App() {
               isSyncing: false,
             });
             cell = { ...cell, code: generatedCode, shortDescription: newShort, fullDescription: newFull };
+
+            // Save version after AI sync
+            handleSaveVersion(`AI sync: ${newShort.slice(0, 50)}`);
           } else {
             handleUpdate(cellId, { isSyncing: false });
             if (syncResult.error) {
@@ -590,24 +732,219 @@ export function App() {
         });
       }
     },
-    [notebook.cells, handleUpdate]
+    [notebook.cells, handleUpdate, handleSaveVersion]
   );
 
-  // Keyboard shortcuts (Cmd+R to run active cell)
+  // Jupyter-style keyboard shortcuts
   useEffect(() => {
+    let deleteCount = 0;
+    let deleteTimeout: ReturnType<typeof setTimeout>;
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd+R (Mac) or Ctrl+R (Windows/Linux) to run active cell
-      if ((e.metaKey || e.ctrlKey) && e.key === 'r') {
+      const target = e.target as HTMLElement;
+      const isInInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+
+      // Global shortcuts (work in any mode)
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'Enter') {
         e.preventDefault();
-        if (activeCellId) {
-          handleRunCell(activeCellId);
+        handleRunAllCells();
+        return;
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        handleSave();
+        return;
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.key === 'o') {
+        e.preventDefault();
+        handleOpen();
+        return;
+      }
+
+      // Alt+V: Toggle variable inspector
+      if (e.altKey && e.key === 'v') {
+        e.preventDefault();
+        setVariableInspectorOpen((prev) => !prev);
+        return;
+      }
+
+      // Cmd+Z: Undo
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey && canUndo) {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
+
+      // Cmd+F: Find
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault();
+        setFindReplaceOpen(true);
+        return;
+      }
+
+      // If in input and not command mode, only handle special keys
+      if (isInInput && !commandMode) {
+        // Shift+Enter: run and advance
+        if (e.shiftKey && e.key === 'Enter') {
+          e.preventDefault();
+          if (activeCellId) {
+            handleRunCell(activeCellId).then(() => {
+              const index = notebook.cells.findIndex((c) => c.id === activeCellId);
+              if (index < notebook.cells.length - 1) {
+                setActiveCellId(notebook.cells[index + 1].id);
+              } else {
+                // Add new cell at end
+                handleAddCell(activeCellId, 'code');
+              }
+            });
+          }
+          return;
+        }
+        // Ctrl+Enter: run current
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          if (activeCellId) handleRunCell(activeCellId);
+          return;
+        }
+        // Escape: enter command mode
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setCommandMode(true);
+          (document.activeElement as HTMLElement)?.blur();
+          return;
+        }
+        return;
+      }
+
+      // Command mode shortcuts (when not in input)
+      if (commandMode || !isInInput) {
+        // Enter: edit mode
+        if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+          e.preventDefault();
+          setCommandMode(false);
+          return;
+        }
+
+        // Shift+Enter: run and advance
+        if (e.shiftKey && e.key === 'Enter') {
+          e.preventDefault();
+          if (activeCellId) {
+            handleRunCell(activeCellId).then(() => {
+              const index = notebook.cells.findIndex((c) => c.id === activeCellId);
+              if (index < notebook.cells.length - 1) {
+                setActiveCellId(notebook.cells[index + 1].id);
+              }
+            });
+          }
+          return;
+        }
+
+        // Ctrl/Cmd+Enter: run current
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          if (activeCellId) handleRunCell(activeCellId);
+          return;
+        }
+
+        // A: add cell above
+        if (e.key === 'a' && !e.metaKey && !e.ctrlKey) {
+          e.preventDefault();
+          handleAddCellAbove('code');
+          return;
+        }
+
+        // B: add cell below
+        if (e.key === 'b' && !e.metaKey && !e.ctrlKey) {
+          e.preventDefault();
+          if (activeCellId) handleAddCell(activeCellId, 'code');
+          return;
+        }
+
+        // DD: delete cell (double-d)
+        if (e.key === 'd' && !e.metaKey && !e.ctrlKey) {
+          e.preventDefault();
+          deleteCount++;
+          clearTimeout(deleteTimeout);
+          if (deleteCount >= 2) {
+            deleteCount = 0;
+            if (activeCellId) {
+              const index = notebook.cells.findIndex((c) => c.id === activeCellId);
+              handleDeleteCell(activeCellId);
+              if (notebook.cells.length > 1) {
+                setActiveCellId(notebook.cells[Math.min(index, notebook.cells.length - 2)]?.id || null);
+              }
+            }
+          } else {
+            deleteTimeout = setTimeout(() => { deleteCount = 0; }, 500);
+          }
+          return;
+        }
+
+        // X: cut cell
+        if (e.key === 'x' && !e.metaKey && !e.ctrlKey) {
+          e.preventDefault();
+          handleCutCell();
+          return;
+        }
+
+        // C: copy cell
+        if (e.key === 'c' && !e.metaKey && !e.ctrlKey) {
+          e.preventDefault();
+          handleCopyCell();
+          return;
+        }
+
+        // V: paste cell
+        if (e.key === 'v' && !e.metaKey && !e.ctrlKey) {
+          e.preventDefault();
+          handlePasteCell();
+          return;
+        }
+
+        // Up/K: select cell above
+        if ((e.key === 'ArrowUp' || e.key === 'k') && !e.metaKey && !e.ctrlKey) {
+          e.preventDefault();
+          if (activeCellId) {
+            const index = notebook.cells.findIndex((c) => c.id === activeCellId);
+            if (index > 0) setActiveCellId(notebook.cells[index - 1].id);
+          }
+          return;
+        }
+
+        // Down/J: select cell below
+        if ((e.key === 'ArrowDown' || e.key === 'j') && !e.metaKey && !e.ctrlKey) {
+          e.preventDefault();
+          if (activeCellId) {
+            const index = notebook.cells.findIndex((c) => c.id === activeCellId);
+            if (index < notebook.cells.length - 1) setActiveCellId(notebook.cells[index + 1].id);
+          }
+          return;
+        }
+
+        // M: convert to markdown
+        if (e.key === 'm' && !e.metaKey && !e.ctrlKey && activeCellId) {
+          e.preventDefault();
+          handleUpdate(activeCellId, { cellType: 'text' });
+          return;
+        }
+
+        // Y: convert to code
+        if (e.key === 'y' && !e.metaKey && !e.ctrlKey && activeCellId) {
+          e.preventDefault();
+          handleUpdate(activeCellId, { cellType: 'code' });
+          return;
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeCellId, handleRunCell]);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      clearTimeout(deleteTimeout);
+    };
+  }, [activeCellId, commandMode, notebook.cells, handleRunCell, handleAddCell, handleAddCellAbove, handleDeleteCell, handleCopyCell, handleCutCell, handlePasteCell, handleRunAllCells, handleUpdate, canUndo, handleUndo]);
 
   const handleSyncCell = useCallback(
     async (cellId: string) => {
@@ -764,6 +1101,114 @@ export function App() {
     }));
   }, []);
 
+  // Run All Cells sequentially
+  const handleRunAllCells = useCallback(async () => {
+    const codeCells = notebook.cells.filter((c) => c.cellType === 'code');
+    for (const cell of codeCells) {
+      await handleRunCell(cell.id);
+    }
+  }, [notebook.cells, handleRunCell]);
+
+  // Run cells above the active cell
+  const handleRunAbove = useCallback(async () => {
+    if (!activeCellId) return;
+    const activeIndex = notebook.cells.findIndex((c) => c.id === activeCellId);
+    if (activeIndex <= 0) return;
+    const cellsAbove = notebook.cells.slice(0, activeIndex).filter((c) => c.cellType === 'code');
+    for (const cell of cellsAbove) {
+      await handleRunCell(cell.id);
+    }
+  }, [notebook.cells, activeCellId, handleRunCell]);
+
+  // Run cells below the active cell (including active)
+  const handleRunBelow = useCallback(async () => {
+    if (!activeCellId) return;
+    const activeIndex = notebook.cells.findIndex((c) => c.id === activeCellId);
+    if (activeIndex === -1) return;
+    const cellsBelow = notebook.cells.slice(activeIndex).filter((c) => c.cellType === 'code');
+    for (const cell of cellsBelow) {
+      await handleRunCell(cell.id);
+    }
+  }, [notebook.cells, activeCellId, handleRunCell]);
+
+  // Clear all outputs
+  const handleClearAllOutputs = useCallback(() => {
+    setNotebook((prev) => ({
+      ...prev,
+      cells: prev.cells.map((cell) => ({
+        ...cell,
+        outputs: [],
+        lastExecutionTime: undefined,
+        lastExecutionSuccess: undefined,
+      })),
+    }));
+  }, []);
+
+  // Copy cell to clipboard
+  const handleCopyCell = useCallback(() => {
+    if (!activeCellId) return;
+    const cell = notebook.cells.find((c) => c.id === activeCellId);
+    if (cell) {
+      setCopiedCell({ ...cell });
+    }
+  }, [activeCellId, notebook.cells]);
+
+  // Cut cell (copy + delete)
+  const handleCutCell = useCallback(() => {
+    if (!activeCellId) return;
+    handleCopyCell();
+    handleDeleteCell(activeCellId);
+    // Move to next cell
+    const index = notebook.cells.findIndex((c) => c.id === activeCellId);
+    if (index < notebook.cells.length - 1) {
+      setActiveCellId(notebook.cells[index + 1].id);
+    } else if (index > 0) {
+      setActiveCellId(notebook.cells[index - 1].id);
+    }
+  }, [activeCellId, handleCopyCell, handleDeleteCell, notebook.cells]);
+
+  // Paste cell below active
+  const handlePasteCell = useCallback(() => {
+    if (!copiedCell) return;
+    const newCell = { ...copiedCell, id: `cell-${Date.now()}` };
+    setNotebook((prev) => {
+      if (!activeCellId) {
+        return { ...prev, cells: [...prev.cells, newCell] };
+      }
+      const index = prev.cells.findIndex((c) => c.id === activeCellId);
+      const newCells = [...prev.cells];
+      newCells.splice(index + 1, 0, newCell);
+      return { ...prev, cells: newCells };
+    });
+    setActiveCellId(newCell.id);
+  }, [copiedCell, activeCellId]);
+
+  // Add cell above active
+  const handleAddCellAbove = useCallback((cellType: CellType = 'code') => {
+    const newCell = cellType === 'text'
+      ? createTextCell(`cell-${Date.now()}`)
+      : createCodeCell(`cell-${Date.now()}`);
+    setNotebook((prev) => {
+      if (!activeCellId) {
+        return { ...prev, cells: [newCell, ...prev.cells] };
+      }
+      const index = prev.cells.findIndex((c) => c.id === activeCellId);
+      const newCells = [...prev.cells];
+      newCells.splice(index, 0, newCell);
+      return { ...prev, cells: newCells };
+    });
+    setActiveCellId(newCell.id);
+  }, [activeCellId]);
+
+  // Handle refresh variables for inspector
+  const handleRefreshVariables = useCallback(async (): Promise<Variable[]> => {
+    const result = await window.promptbook.kernel.getVariables();
+    if (result.success) {
+      return result.variables;
+    }
+    return [];
+  }, []);
+
   const handleOpen = async () => {
     const path = await window.promptbook.file.open();
     if (path) {
@@ -777,13 +1222,141 @@ export function App() {
     }
   };
 
+  const handleExportPython = async () => {
+    const result = await window.promptbook.file.exportPython(notebook);
+    if (result.success && result.filePath) {
+      setGlobalError(null); // Clear any existing error
+      // Could show a success toast here
+    }
+  };
+
+  // Save a version to git
+  const handleSaveVersion = useCallback(async (message: string) => {
+    const content = JSON.stringify(notebook, null, 2);
+    await window.promptbook.version.save(notebookId, content, message);
+    const canUndoResult = await window.promptbook.version.canUndo(notebookId);
+    setCanUndo(canUndoResult.canUndo);
+  }, [notebook, notebookId]);
+
+  // Undo to previous version
+  const handleUndo = useCallback(async () => {
+    const result = await window.promptbook.version.undo(notebookId);
+    if (result.success && result.content) {
+      try {
+        const restored = JSON.parse(result.content);
+        setNotebook(restored);
+        const canUndoResult = await window.promptbook.version.canUndo(notebookId);
+        setCanUndo(canUndoResult.canUndo);
+      } catch {
+        setGlobalError('Failed to restore version');
+      }
+    }
+  }, [notebookId]);
+
+  // Find & Replace handlers
+  const handleSearch = useCallback((query: string, caseSensitive: boolean, useRegex: boolean): SearchMatch[] => {
+    const matches: SearchMatch[] = [];
+    const flags = caseSensitive ? 'g' : 'gi';
+
+    const searchIn = (text: string, field: SearchMatch['field'], cellId: string) => {
+      if (!text) return;
+
+      let regex: RegExp;
+      try {
+        regex = useRegex ? new RegExp(query, flags) : new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
+      } catch {
+        return; // Invalid regex
+      }
+
+      let match;
+      while ((match = regex.exec(text)) !== null) {
+        matches.push({
+          cellId,
+          field,
+          startIndex: match.index,
+          endIndex: match.index + match[0].length,
+          text: match[0],
+        });
+      }
+    };
+
+    for (const cell of notebook.cells) {
+      if (cell.cellType === 'code') {
+        searchIn(cell.shortDescription, 'shortDescription', cell.id);
+        searchIn(cell.fullDescription, 'fullDescription', cell.id);
+        searchIn(cell.code, 'code', cell.id);
+      } else {
+        searchIn(cell.textContent, 'textContent', cell.id);
+      }
+    }
+
+    return matches;
+  }, [notebook.cells]);
+
+  const handleReplace = useCallback((match: SearchMatch, replacement: string) => {
+    setNotebook((prev) => ({
+      ...prev,
+      cells: prev.cells.map((cell) => {
+        if (cell.id !== match.cellId) return cell;
+
+        const field = match.field;
+        const text = cell[field] as string;
+        if (!text) return cell;
+
+        const newText = text.slice(0, match.startIndex) + replacement + text.slice(match.endIndex);
+        return { ...cell, [field]: newText };
+      }),
+    }));
+  }, []);
+
+  const handleReplaceAll = useCallback((query: string, replacement: string, caseSensitive: boolean, useRegex: boolean): number => {
+    let count = 0;
+    const flags = caseSensitive ? 'g' : 'gi';
+
+    setNotebook((prev) => ({
+      ...prev,
+      cells: prev.cells.map((cell) => {
+        let regex: RegExp;
+        try {
+          regex = useRegex ? new RegExp(query, flags) : new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
+        } catch {
+          return cell;
+        }
+
+        const newCell = { ...cell };
+        const fields: Array<keyof CellState> = cell.cellType === 'code'
+          ? ['shortDescription', 'fullDescription', 'code']
+          : ['textContent'];
+
+        for (const field of fields) {
+          const text = cell[field] as string;
+          if (!text) continue;
+
+          const newText = text.replace(regex, () => {
+            count++;
+            return replacement;
+          });
+          (newCell as Record<string, unknown>)[field] = newText;
+        }
+
+        return newCell;
+      }),
+    }));
+
+    return count;
+  }, []);
+
   const handleSave = async () => {
     if (filePath) {
       await window.promptbook.file.save(filePath, notebook);
+      setHasUnsavedChanges(false);
+      setLastSavedAt(new Date());
     } else {
       const result = await window.promptbook.file.saveAs(notebook);
       if (result.success && result.filePath) {
         setFilePath(result.filePath);
+        setHasUnsavedChanges(false);
+        setLastSavedAt(new Date());
       }
     }
   };
@@ -791,12 +1364,17 @@ export function App() {
   const fileName = filePath ? filePath.split('/').pop() : null;
 
   return (
-    <div className="app">
+    <div className={`app ${variableInspectorOpen ? 'app--inspector-open' : ''}`}>
       <header className="app-header">
         <div className="app-brand">
           <span className="app-logo">{Icons.logo}</span>
           <h1>Promptbook</h1>
-          {fileName && <span className="app-filename">{fileName}</span>}
+          {fileName && (
+            <span className="app-filename">
+              {fileName}
+              {hasUnsavedChanges && <span className="app-filename__unsaved" title="Unsaved changes">●</span>}
+            </span>
+          )}
         </div>
         <div className="app-actions">
           <KernelStatus
@@ -806,6 +1384,28 @@ export function App() {
             onInterrupt={handleInterrupt}
             onRestart={handleRestart}
           />
+          <div className="toolbar-group">
+            <button onClick={handleRunAllCells} title="Run All Cells (⇧⌘↵)" className="toolbar-btn toolbar-btn--primary">
+              {Icons.runAll}
+              <span>Run All</span>
+            </button>
+            <div className="toolbar-dropdown">
+              <button className="toolbar-dropdown-trigger" title="More run options">
+                {Icons.chevronDown}
+              </button>
+              <div className="toolbar-dropdown-menu">
+                <button onClick={handleRunAbove}>Run Above</button>
+                <button onClick={handleRunBelow}>Run Below</button>
+                <hr />
+                <button onClick={handleClearAllOutputs}>Clear All Outputs</button>
+                <hr />
+                <button onClick={handleExportPython}>Export to Python</button>
+              </div>
+            </div>
+          </div>
+          <button onClick={handleUndo} disabled={!canUndo} title="Undo (⌘Z)">
+            {Icons.undo}
+          </button>
           <button onClick={handleOpen} title="Open file (⌘O)">
             {Icons.folder}
             <span>Open</span>
@@ -813,6 +1413,14 @@ export function App() {
           <button onClick={handleSave} title="Save file (⌘S)">
             {Icons.save}
             <span>Save</span>
+          </button>
+          <button
+            onClick={() => setVariableInspectorOpen(!variableInspectorOpen)}
+            title="Variables (⌥V)"
+            className={variableInspectorOpen ? 'toolbar-btn--active' : ''}
+          >
+            {Icons.variables}
+            <span>Variables</span>
           </button>
           <button onClick={() => setSettingsOpen(true)} title="Settings">
             {Icons.settings}
@@ -863,6 +1471,19 @@ export function App() {
           </button>
         </div>
       )}
+      <VariableInspector
+        isOpen={variableInspectorOpen}
+        onClose={() => setVariableInspectorOpen(false)}
+        onRefresh={handleRefreshVariables}
+      />
+      <FindReplace
+        isOpen={findReplaceOpen}
+        onClose={() => setFindReplaceOpen(false)}
+        onSearch={handleSearch}
+        onReplace={handleReplace}
+        onReplaceAll={handleReplaceAll}
+        onNavigate={(cellId) => setActiveCellId(cellId)}
+      />
     </div>
   );
 }

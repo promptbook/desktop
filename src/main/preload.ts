@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('promptbook', {
     interrupt: () => ipcRenderer.invoke('kernel:interrupt'),
     restart: () => ipcRenderer.invoke('kernel:restart'),
     getStatus: () => ipcRenderer.invoke('kernel:getStatus'),
+    getVariables: () => ipcRenderer.invoke('kernel:getVariables'),
 
     // Event listeners
     onOutput: (callback: (output: KernelOutput, msgId: string) => void) => {
@@ -73,6 +74,7 @@ contextBridge.exposeInMainWorld('promptbook', {
     save: (filePath: string, notebook: unknown) =>
       ipcRenderer.invoke('file:save', filePath, notebook),
     saveAs: (notebook: unknown) => ipcRenderer.invoke('file:saveAs', notebook),
+    exportPython: (notebook: unknown) => ipcRenderer.invoke('file:exportPython', notebook),
   },
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),
@@ -88,5 +90,17 @@ contextBridge.exposeInMainWorld('promptbook', {
     getLanguages: () => ipcRenderer.invoke('spellcheck:getLanguages'),
     setLanguages: (languages: string[]) => ipcRenderer.invoke('spellcheck:setLanguages', languages),
     addWord: (word: string) => ipcRenderer.invoke('spellcheck:addWord', word),
+  },
+  version: {
+    save: (notebookId: string, content: string, message: string) =>
+      ipcRenderer.invoke('version:save', notebookId, content, message),
+    getHistory: (notebookId: string) =>
+      ipcRenderer.invoke('version:getHistory', notebookId),
+    undo: (notebookId: string) =>
+      ipcRenderer.invoke('version:undo', notebookId),
+    canUndo: (notebookId: string) =>
+      ipcRenderer.invoke('version:canUndo', notebookId),
+    getVersion: (notebookId: string, hash: string) =>
+      ipcRenderer.invoke('version:getVersion', notebookId, hash),
   },
 });
