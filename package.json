@@ -7,10 +7,12 @@
     "build": "tsc && vite build",
     "dev": "concurrently \"tsc -w\" \"vite\"",
     "start": "electron .",
+    "restart": "pkill -f 'electron .' || true && npm run build && electron .",
     "package": "electron-builder",
     "lint": "eslint src --max-warnings 0"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.23",
     "@anthropic-ai/sdk": "^0.72.0",
     "@promptbook/core": "workspace:*",
     "uuid": "^13.0.0",

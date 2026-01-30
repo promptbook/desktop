@@ -5,7 +5,7 @@ export interface AppSettings {
     selectedEnvironment?: string;
   };
   ai: {
-    provider: 'claude' | 'bedrock' | 'openai' | 'ollama';
+    provider: 'agent' | 'claude' | 'bedrock' | 'openai' | 'ollama';
     claudeApiKey?: string;
     openaiApiKey?: string;
     bedrockRegion?: string;
@@ -21,7 +21,7 @@ export interface AppSettings {
 export const defaultSettings: AppSettings = {
   python: {},
   ai: {
-    provider: 'claude',
+    provider: 'agent',
   },
   kernel: {
     startupTimeout: 30000,
@@ -114,12 +114,13 @@ export function Settings({ isOpen, onClose, settings, onSave }: SettingsProps) {
             <div className="settings-field">
               <label>Provider</label>
               <div className="settings-provider-grid">
-                {(['claude', 'bedrock', 'openai', 'ollama'] as const).map((provider) => (
+                {(['agent', 'claude', 'bedrock', 'openai', 'ollama'] as const).map((provider) => (
                   <button
                     key={provider}
                     className={`settings-provider-btn ${localSettings.ai.provider === provider ? 'active' : ''}`}
                     onClick={() => updateAI({ provider })}
                   >
+                    {provider === 'agent' && 'Claude Agent'}
                     {provider === 'claude' && 'Claude API'}
                     {provider === 'bedrock' && 'AWS Bedrock'}
                     {provider === 'openai' && 'OpenAI'}
@@ -128,6 +129,16 @@ export function Settings({ isOpen, onClose, settings, onSave }: SettingsProps) {
                 ))}
               </div>
             </div>
+
+            {/* Claude Agent Settings */}
+            {localSettings.ai.provider === 'agent' && (
+              <div className="settings-field">
+                <p className="settings-hint" style={{ marginTop: 0 }}>
+                  Uses the Claude Agent SDK with your configured credentials.
+                  Set <code>ANTHROPIC_API_KEY</code> environment variable or configure AWS Bedrock credentials.
+                </p>
+              </div>
+            )}
 
             {/* Claude API Settings */}
             {localSettings.ai.provider === 'claude' && (

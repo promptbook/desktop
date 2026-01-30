@@ -10,13 +10,21 @@ const getSettingsPath = () => path.join(app.getPath('userData'), 'settings.json'
 // Default settings
 interface AppSettings {
   python: { selectedEnvironment?: string };
-  ai: { provider: 'claude' | 'openai' };
+  ai: {
+    provider: 'agent' | 'claude' | 'bedrock' | 'openai' | 'ollama';
+    claudeApiKey?: string;
+    openaiApiKey?: string;
+    bedrockRegion?: string;
+    bedrockProfile?: string;
+    ollamaUrl?: string;
+    ollamaModel?: string;
+  };
   kernel: { startupTimeout: number };
 }
 
 const defaultSettings: AppSettings = {
   python: {},
-  ai: { provider: 'claude' },
+  ai: { provider: 'agent' },
   kernel: { startupTimeout: 30000 },
 };
 
@@ -253,51 +261,97 @@ ipcMain.handle('kernel:createVenv', async (_event, venvName: string = '.venv') =
 });
 
 // AI handlers
+async function aiSyncWithAgent(direction: string, content: string): Promise<{ success: boolean; result?: string; error?: string }> {
+  const { query } = await import('@anthropic-ai/claude-agent-sdk');
+
+  const prompt = direction === 'toCode'
+    ? `Generate Python code for the following task. Return ONLY the Python code, no explanations or markdown:\n\n${content}`
+    : `Describe what this Python code does in a concise instruction. Return ONLY the description, no code:\n\n${content}`;
+
+  const q = query({
+    prompt,
+    options: {
+      maxTurns: 1,
+      tools: [], // No tools needed for simple code generation
+    },
+  });
+
+  let result = '';
+  for await (const message of q) {
+    if (message.type === 'assistant' && message.message?.content) {
+      for (const block of message.message.content) {
+        if (block.type === 'text') {
+          result += block.text;
+        }
+      }
+    }
+  }
+
+  if (!result) {
+    return { success: false, error: 'No response generated' };
+  }
+
+  // Clean up markdown code blocks if present
+  if (direction === 'toCode') {
+    result = result.replace(/^```python\n?/i, '').replace(/\n?```$/i, '');
+    result = result.replace(/^```\n?/, '').replace(/\n?```$/i, '');
+  }
+
+  return { success: true, result: result.trim() };
+}
+
+async function aiSyncWithClaude(direction: string, content: string): Promise<{ success: boolean; result?: string; error?: string }> {
+  const Anthropic = (await import('@anthropic-ai/sdk')).default;
+  const client = new Anthropic();
+
+  const prompt = direction === 'toCode'
+    ? `Generate Python code for the following task. Return ONLY the Python code, no explanations or markdown:\n\n${content}`
+    : `Describe what this Python code does in a concise instruction. Return ONLY the description, no code:\n\n${content}`;
+
+  const message = await client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 1024,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const textBlock = message.content.find((block) => block.type === 'text');
+  if (textBlock && textBlock.type === 'text') {
+    let result = textBlock.text;
+    if (direction === 'toCode') {
+      result = result.replace(/^```python\n?/i, '').replace(/\n?```$/i, '');
+      result = result.replace(/^```\n?/, '').replace(/\n?```$/i, '');
+    }
+    return { success: true, result: result.trim() };
+  }
+
+  return { success: false, error: 'No response generated' };
+}
+
 ipcMain.handle('ai:sync', async (_event, _cellId: string, direction: string, content: string) => {
   try {
-    const Anthropic = (await import('@anthropic-ai/sdk')).default;
-    const client = new Anthropic();
+    const provider = currentSettings.ai?.provider || 'agent';
 
-    if (direction === 'toCode') {
-      // Generate Python code from instructions
-      const message = await client.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1024,
-        messages: [
-          {
-            role: 'user',
-            content: `Generate Python code for the following task. Return ONLY the Python code, no explanations or markdown:\n\n${content}`,
-          },
-        ],
-      });
+    switch (provider) {
+      case 'agent':
+        return await aiSyncWithAgent(direction, content);
 
-      const textBlock = message.content.find((block) => block.type === 'text');
-      if (textBlock && textBlock.type === 'text') {
-        // Clean up the response - remove markdown code blocks if present
-        let code = textBlock.text;
-        code = code.replace(/^```python\n?/i, '').replace(/\n?```$/i, '');
-        code = code.replace(/^```\n?/, '').replace(/\n?```$/, '');
-        return { success: true, result: code.trim() };
-      }
-      return { success: false, error: 'No code generated' };
-    } else {
-      // Generate instructions from code
-      const message = await client.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1024,
-        messages: [
-          {
-            role: 'user',
-            content: `Describe what this Python code does in a concise instruction. Return ONLY the description, no code:\n\n${content}`,
-          },
-        ],
-      });
+      case 'claude':
+        return await aiSyncWithClaude(direction, content);
 
-      const textBlock = message.content.find((block) => block.type === 'text');
-      if (textBlock && textBlock.type === 'text') {
-        return { success: true, result: textBlock.text.trim() };
-      }
-      return { success: false, error: 'No description generated' };
+      case 'bedrock':
+        // TODO: Implement Bedrock provider
+        return { success: false, error: 'Bedrock provider not yet implemented' };
+
+      case 'openai':
+        // TODO: Implement OpenAI provider
+        return { success: false, error: 'OpenAI provider not yet implemented' };
+
+      case 'ollama':
+        // TODO: Implement Ollama provider
+        return { success: false, error: 'Ollama provider not yet implemented' };
+
+      default:
+        return { success: false, error: `Unknown provider: ${provider}` };
     }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
