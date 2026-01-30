@@ -418,13 +418,24 @@ export function App() {
       }
 
       // Now execute the code
-      handleUpdate(cellId, { isExecuting: true, outputs: [] });
+      const startTime = Date.now();
+      const executionCount = (cell.executionCount || 0) + 1;
+      handleUpdate(cellId, {
+        isExecuting: true,
+        outputs: [],
+        executionStartTime: startTime,
+        executionCount,
+      });
 
       try {
         const result = await window.promptbook.kernel.execute(cell.code);
+        const executionTime = Date.now() - startTime;
 
         if (result.needsEnvironment) {
-          handleUpdate(cellId, { isExecuting: false });
+          handleUpdate(cellId, {
+            isExecuting: false,
+            executionStartTime: undefined,
+          });
           setEnvironmentPickerOpen(true);
           return;
         }
@@ -439,17 +450,27 @@ export function App() {
           handleUpdate(cellId, {
             isExecuting: false,
             outputs: cellOutputs,
+            executionStartTime: undefined,
+            lastExecutionTime: executionTime,
+            lastExecutionSuccess: true,
           });
         } else {
           handleUpdate(cellId, {
             isExecuting: false,
             outputs: [{ type: 'error', content: result.error || 'Execution failed' }],
+            executionStartTime: undefined,
+            lastExecutionTime: executionTime,
+            lastExecutionSuccess: false,
           });
         }
       } catch (error) {
+        const executionTime = Date.now() - startTime;
         handleUpdate(cellId, {
           isExecuting: false,
           outputs: [{ type: 'error', content: String(error) }],
+          executionStartTime: undefined,
+          lastExecutionTime: executionTime,
+          lastExecutionSuccess: false,
         });
       }
     },
