@@ -7,7 +7,7 @@
     "build": "tsc && vite build",
     "dev": "concurrently \"tsc -w\" \"vite\"",
     "start": "electron .",
-    "restart": "pkill -f 'electron .' || true && npm run build && electron .",
+    "restart": "pkill -9 -f 'electron.*promptbook|Electron.*Promptbook|Promptbook' || true && npm run build && electron .",
     "package": "electron-builder",
     "lint": "eslint src --max-warnings 15"
   },
