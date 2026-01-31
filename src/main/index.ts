@@ -21,6 +21,7 @@ import { registerAiHandlers } from './ipc/aiHandlers';
 import { registerFileHandlers } from './ipc/fileHandlers';
 import { registerVersionHandlers } from './ipc/versionHandlers';
 import { registerUtilityHandlers } from './ipc/utilityHandlers';
+import { testEventService } from './services/TestEventService';
 
 // ============================================
 // Logging Setup
@@ -215,6 +216,9 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  // Set up test event service to forward events to renderer
+  testEventService.setMainWindow(() => mainWindow);
 
   log.info('Main window created');
 }

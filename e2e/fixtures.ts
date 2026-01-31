@@ -182,13 +182,13 @@ export const test = base.extend<TestFixtures>({
 
     // Inject event capture into the page
     await page.evaluate(() => {
-      // Listen for test events from main process
-      // @ts-expect-error - IPC not typed in page context
-      if (window.electronAPI?.onTestEvent) {
+      // Listen for test events from main process via promptbook API
+      // @ts-expect-error - promptbook API not typed in page context
+      if (window.promptbook?.test?.onEvent) {
         // @ts-expect-error - custom function
-        window.electronAPI.onTestEvent((event: string, data: unknown) => {
+        window.promptbook.test.onEvent((eventName: string, data: unknown) => {
           // @ts-expect-error - exposed function
-          window.__captureTestEvent(event, data);
+          window.__captureTestEvent(eventName, data);
         });
       }
     });

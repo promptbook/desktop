@@ -28,6 +28,56 @@ export interface TestEvents {
     direction: SyncDirection;
     error: string;
   };
+  'llm:progress': {
+    timestamp: number;
+    cellId: string;
+    stage: 'connecting' | 'sending' | 'streaming' | 'processing';
+    message?: string;
+    partialResult?: string;
+  };
+  'llm:stream:chunk': {
+    timestamp: number;
+    cellId: string;
+    chunk: string;
+    totalLength: number;
+  };
+
+  // Agent Events (for Claude Agent SDK)
+  'agent:start': {
+    timestamp: number;
+    cellId: string;
+    direction: SyncDirection;
+    provider: string;
+  };
+  'agent:thinking': {
+    timestamp: number;
+    cellId: string;
+    message: string;
+  };
+  'agent:tool_use': {
+    timestamp: number;
+    cellId: string;
+    toolName: string;
+    input: unknown;
+  };
+  'agent:tool_result': {
+    timestamp: number;
+    cellId: string;
+    toolName: string;
+    result: unknown;
+  };
+  'agent:complete': {
+    timestamp: number;
+    cellId: string;
+    result: string;
+    durationMs: number;
+  };
+  'agent:error': {
+    timestamp: number;
+    cellId: string;
+    error: string;
+    stack?: string;
+  };
 
   // Python/Kernel Events
   'kernel:execute:start': {
