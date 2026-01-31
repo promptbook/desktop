@@ -130,6 +130,7 @@ interface PromptbookAPI {
     renameFile: (projectId: string, oldPath: string, newPath: string) => Promise<{ success: boolean; error?: string }>;
     readFile: (projectId: string, relativePath: string) => Promise<{ success: boolean; content?: string; error?: string }>;
     writeFile: (projectId: string, relativePath: string, content: string) => Promise<{ success: boolean; error?: string }>;
+    saveNotebook: (projectId: string, relativePath: string, notebook: unknown) => Promise<{ success: boolean; error?: string }>;
   };
   session: {
     load: (projectId: string) => Promise<{ success: boolean; session?: SessionState; error?: string }>;

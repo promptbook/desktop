@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import type { NotebookState, CellState, SearchMatch } from '@promptbook/core/ui';
+import type { NotebookState, CellState, SearchMatch } from '@promptbook/ui';
 
 export interface UseFindReplaceReturn {
   findReplaceOpen: boolean;

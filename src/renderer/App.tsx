@@ -9,7 +9,7 @@ import {
   PackageInstallModal,
   KernelSymbol,
   PythonEnvironment,
-} from '@promptbook/core/ui';
+} from '@promptbook/ui';
 import { Settings, AppSettings } from './Settings';
 import { Icons } from './icons';
 import './types'; // Import global type declarations

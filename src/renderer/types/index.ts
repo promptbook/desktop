@@ -1,4 +1,4 @@
-import type { Variable } from '@promptbook/core/ui';
+import type { Variable } from '@promptbook/ui';
 
 // Types for kernel
 export interface KernelOutput {

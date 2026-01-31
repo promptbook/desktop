@@ -1,9 +1,9 @@
 import { ipcMain } from 'electron';
-import { type AiSyncContext, createSyncProvider } from '@promptbook/core/sync';
+import { type AiSyncContext, type SyncDirection, createSyncProvider } from '@promptbook/core/sync';
 import type { AiSettings, AiSyncResult } from '@promptbook/core';
 
 export function registerAiHandlers(getCurrentSettings: () => { ai?: AiSettings }): void {
-  ipcMain.handle('ai:sync', async (_event, _cellId: string, direction: string, context: AiSyncContext): Promise<AiSyncResult> => {
+  ipcMain.handle('ai:sync', async (_event, _cellId: string, direction: SyncDirection, context: AiSyncContext): Promise<AiSyncResult> => {
     try {
       const aiSettings = getCurrentSettings().ai || { provider: 'agent' };
 

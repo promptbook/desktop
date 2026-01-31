@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef } from 'react';
-import type { CellState, NotebookState } from '@promptbook/core/ui';
+import type { CellState, NotebookState } from '@promptbook/ui';
 
 interface UseKeyboardShortcutsParams {
   notebook: NotebookState;

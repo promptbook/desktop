@@ -1,7 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { AppWrapper } from './AppWrapper';
-import '@promptbook/core/styles';
+import '@promptbook/ui/styles';
 
 const container = document.getElementById('root');
 if (container) {

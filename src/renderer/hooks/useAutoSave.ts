@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import type { NotebookState } from '@promptbook/core/ui';
+import type { NotebookState } from '@promptbook/ui';
 
 export interface UseAutoSaveReturn {
   hasUnsavedChanges: boolean;

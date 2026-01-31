@@ -1,5 +1,5 @@
-import type { NotebookState, Variable, KernelSymbol } from '@promptbook/core/ui';
-import type { GeneratedSymbol } from '@promptbook/core/sync';
+import type { NotebookState, Variable, KernelSymbol } from '@promptbook/ui';
+import type { GeneratedSymbol } from '@promptbook/types';
 import type { AppSettings } from './Settings';
 
 // Types for kernel
