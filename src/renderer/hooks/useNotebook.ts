@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import * as yaml from 'yaml';
 import type {
   NotebookState,
   CellState,
@@ -305,9 +306,12 @@ function useFileLoadEffect(
       window.promptbook.project.readFile(projectId, initialFilePath).then((result) => {
         if (result.success && result.content) {
           try {
-            setNotebook(JSON.parse(result.content));
+            // Parse YAML content (notebooks are saved as YAML)
+            const parsed = yaml.parse(result.content);
+            setNotebook(parsed);
             setFilePath(initialFilePath);
-          } catch {
+          } catch (err) {
+            console.error('Failed to parse notebook:', err);
             setFilePath(initialFilePath);
           }
         }
