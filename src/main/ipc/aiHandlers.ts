@@ -18,6 +18,8 @@ interface AiSyncResult {
   success: boolean;
   result?: string;
   symbols?: GeneratedSymbol[];
+  /** All symbols from the entire notebook (all cells) */
+  notebookSymbols?: GeneratedSymbol[];
   error?: string;
 }
 
@@ -25,23 +27,24 @@ interface AiSyncResult {
  * Parse structured JSON output from code generation
  * Falls back to extracting code from markdown if JSON parsing fails
  */
-function parseCodeGenerationResult(response: string, isToCode: boolean): { code: string; symbols: GeneratedSymbol[] } {
+function parseCodeGenerationResult(response: string, isToCode: boolean): { code: string; symbols: GeneratedSymbol[]; notebookSymbols: GeneratedSymbol[] } {
   if (!isToCode) {
-    return { code: response.trim(), symbols: [] };
+    return { code: response.trim(), symbols: [], notebookSymbols: [] };
   }
 
   // Try to parse as JSON first
   try {
     // Look for JSON object in the response
-    const jsonMatch = response.match(/\{[\s\S]*"code"[\s\S]*"symbols"[\s\S]*\}/);
+    const jsonMatch = response.match(/\{[\s\S]*"code"[\s\S]*\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]) as CodeGenerationResult;
-      if (parsed.code && Array.isArray(parsed.symbols)) {
+      if (parsed.code) {
+        const filterSymbols = (arr: GeneratedSymbol[] | undefined) =>
+          (arr || []).filter(s => s.name && s.kind && (s.kind === 'variable' || s.kind === 'function'));
         return {
           code: parsed.code.trim(),
-          symbols: parsed.symbols.filter(s =>
-            s.name && s.kind && (s.kind === 'variable' || s.kind === 'function')
-          ),
+          symbols: filterSymbols(parsed.symbols),
+          notebookSymbols: filterSymbols(parsed.notebookSymbols),
         };
       }
     }
@@ -56,7 +59,7 @@ function parseCodeGenerationResult(response: string, isToCode: boolean): { code:
     code = codeMatch[1];
   }
 
-  return { code: code.trim(), symbols: [] };
+  return { code: code.trim(), symbols: [], notebookSymbols: [] };
 }
 
 async function aiSyncWithAgent(
@@ -96,9 +99,9 @@ async function aiSyncWithAgent(
 
     // Parse the result based on direction
     const isToCode = direction === 'toCode' || direction === 'pseudoToCode' || direction === 'shortToCode';
-    const { code, symbols } = parseCodeGenerationResult(rawResult, isToCode);
+    const { code, symbols, notebookSymbols } = parseCodeGenerationResult(rawResult, isToCode);
 
-    return { success: true, result: code, symbols };
+    return { success: true, result: code, symbols, notebookSymbols };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     console.error('[AI Sync] Exception:', errorMessage);
@@ -125,8 +128,8 @@ async function aiSyncWithClaude(
   if (textBlock && textBlock.type === 'text') {
     const rawResult = textBlock.text;
     const isToCode = direction === 'toCode' || direction === 'pseudoToCode' || direction === 'shortToCode';
-    const { code, symbols } = parseCodeGenerationResult(rawResult, isToCode);
-    return { success: true, result: code, symbols };
+    const { code, symbols, notebookSymbols } = parseCodeGenerationResult(rawResult, isToCode);
+    return { success: true, result: code, symbols, notebookSymbols };
   }
 
   return { success: false, error: 'No response generated' };

@@ -217,6 +217,7 @@ function NotebookContent({ notebookHook, getSymbols }: NotebookContentProps) {
         onCellFocus={notebookHook.setActiveCellId}
         listFiles={notebookHook.listFiles}
         getSymbols={getSymbols}
+        preloadedSymbols={notebookHook.notebookSymbols}
       />
     </main>
   );

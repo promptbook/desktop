@@ -18,6 +18,8 @@ import type { PackageInstallModalState } from './useCellExecution';
 
 export type InstallAction = 'once' | 'current-cell' | 'setup-cell';
 
+import type { GeneratedSymbol } from '@promptbook/core/sync';
+
 export interface UseNotebookReturn {
   notebook: NotebookState;
   setNotebook: React.Dispatch<React.SetStateAction<NotebookState>>;
@@ -33,6 +35,8 @@ export interface UseNotebookReturn {
   isInstallingPackages: boolean;
   packageInstallError: string | null;
   setPackageInstallError: (error: string | null) => void;
+  /** Notebook-level symbols for # autocomplete (from LLM code generation) */
+  notebookSymbols: GeneratedSymbol[];
   handleUpdate: (cellId: string, updates: Partial<CellState>) => void;
   handleAddCell: (afterCellId?: string, cellType?: CellType) => void;
   handleAddCellAbove: (cellType?: CellType) => void;
@@ -373,7 +377,7 @@ export function useNotebook(
   }, []);
 
   const { handleRunCell, handleSyncCell } = useCellExecution({
-    notebook, handleUpdate, handleSaveVersion, onError, setEnvironmentPickerOpen, setPackageInstallModal, setPackageInstallError,
+    notebook, setNotebook, handleUpdate, handleSaveVersion, onError, setEnvironmentPickerOpen, setPackageInstallModal, setPackageInstallError,
   });
 
   const cellOps = createCellOperations({ setNotebook, defaultTab, getActiveCellId, setActiveCellId });
@@ -397,9 +401,13 @@ export function useNotebook(
   );
   const listFiles = useCallback(listFilesHelper, []);
 
+  // Get notebook-level symbols for # autocomplete (from LLM code generation)
+  const notebookSymbols = notebook.metadata?.symbols || [];
+
   return {
     notebook, setNotebook, filePath, setFilePath, activeCellId, setActiveCellId, copiedCell, commandMode, setCommandMode,
-    packageInstallModal, setPackageInstallModal, isInstallingPackages, packageInstallError, setPackageInstallError, handleUpdate,
+    packageInstallModal, setPackageInstallModal, isInstallingPackages, packageInstallError, setPackageInstallError,
+    notebookSymbols, handleUpdate,
     handleAddCell: cellOps.handleAddCell, handleAddCellAbove: cellOps.handleAddCellAbove,
     handleMoveCell: cellOps.handleMoveCell, handleDeleteCell: cellOps.handleDeleteCell,
     handleCopyCell: copyPasteOps.handleCopyCell, handleCutCell: copyPasteOps.handleCutCell, handlePasteCell: copyPasteOps.handlePasteCell,

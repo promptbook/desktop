@@ -4,6 +4,7 @@ import type {
   CellState,
   CellOutput,
 } from '@promptbook/core/ui';
+import type { GeneratedSymbol } from '@promptbook/core/sync';
 import { detectMissingPackages, MissingPackage } from '@promptbook/core/utils';
 import {
   extractParams,
@@ -21,6 +22,7 @@ export interface PackageInstallModalState {
 
 interface UseCellExecutionParams {
   notebook: NotebookState;
+  setNotebook: React.Dispatch<React.SetStateAction<NotebookState>>;
   handleUpdate: (cellId: string, updates: Partial<CellState>) => void;
   handleSaveVersion: (message: string) => Promise<void>;
   onError: (error: string) => void;
@@ -29,8 +31,25 @@ interface UseCellExecutionParams {
   setPackageInstallError: (error: string | null) => void;
 }
 
+/** Helper to update notebook symbols from LLM response */
+function updateNotebookSymbols(
+  setNotebook: React.Dispatch<React.SetStateAction<NotebookState>>,
+  symbols: GeneratedSymbol[]
+): void {
+  if (!symbols || symbols.length === 0) return;
+  setNotebook(prev => ({
+    ...prev,
+    metadata: {
+      ...prev.metadata,
+      symbols,
+      symbolsLastUpdated: new Date().toISOString(),
+    },
+  }));
+}
+
 export function useCellExecution({
   notebook,
+  setNotebook,
   handleUpdate,
   handleSaveVersion,
   onError,
@@ -95,20 +114,20 @@ export function useCellExecution({
 
       // Sync with AI if still dirty
       if (cell.isDirty && hasDescription) {
-        cell = await syncCellWithAI(cellId, cell, cellsBefore, cellsAfter, handleUpdate, handleSaveVersion, onError);
+        cell = await syncCellWithAI(cellId, cell, cellsBefore, cellsAfter, handleUpdate, handleSaveVersion, onError, setNotebook);
         if (!cell) return;
       }
 
       // Generate code if only description exists
       if (hasDescription && !hasCode) {
-        cell = await generateCodeFromDescription(cellId, cell, cellsBefore, cellsAfter, handleUpdate, handleSaveVersion, onError);
+        cell = await generateCodeFromDescription(cellId, cell, cellsBefore, cellsAfter, handleUpdate, handleSaveVersion, onError, setNotebook);
         if (!cell) return;
       }
 
       // Execute the code
       await executeCode(cellId, cell, handleUpdate, setEnvironmentPickerOpen, setPackageInstallModal, setPackageInstallError);
     },
-    [notebook.cells, handleUpdate, handleSaveVersion, onError, setEnvironmentPickerOpen, setPackageInstallModal, setPackageInstallError]
+    [notebook.cells, setNotebook, handleUpdate, handleSaveVersion, onError, setEnvironmentPickerOpen, setPackageInstallModal, setPackageInstallError]
   );
 
   const handleSyncCell = useCallback(
@@ -133,16 +152,16 @@ export function useCellExecution({
         if (lastEdited === 'code') {
           await syncFromCode(cellId, cell, handleUpdate);
         } else if (lastEdited === 'short') {
-          await syncFromShort(cellId, cell, cellsBefore, cellsAfter, handleUpdate);
+          await syncFromShort(cellId, cell, cellsBefore, cellsAfter, handleUpdate, setNotebook);
         } else {
-          await syncFromPseudo(cellId, cell, cellsBefore, cellsAfter, handleUpdate);
+          await syncFromPseudo(cellId, cell, cellsBefore, cellsAfter, handleUpdate, setNotebook);
         }
       } catch (error) {
         handleUpdate(cellId, { isSyncing: false });
         onError(String(error));
       }
     },
-    [notebook.cells, handleUpdate, onError]
+    [notebook.cells, handleUpdate, onError, setNotebook]
   );
 
   return { handleRunCell, handleSyncCell };
@@ -156,7 +175,8 @@ async function syncCellWithAI(
   cellsAfter: CellContext[],
   handleUpdate: (cellId: string, updates: Partial<CellState>) => void,
   handleSaveVersion: (message: string) => Promise<void>,
-  onError: (error: string) => void
+  onError: (error: string) => void,
+  setNotebook: React.Dispatch<React.SetStateAction<NotebookState>>
 ): Promise<CellState | null> {
   handleUpdate(cellId, { isSyncing: true });
   try {
@@ -171,6 +191,12 @@ async function syncCellWithAI(
 
     if (syncResult.success && syncResult.result) {
       const generatedCode = syncResult.result;
+
+      // Update notebook symbols from LLM response
+      if (syncResult.notebookSymbols) {
+        updateNotebookSymbols(setNotebook, syncResult.notebookSymbols);
+      }
+
       const [shortResult, fullResult] = await Promise.all([
         window.promptbook.ai.sync(cellId, 'codeToShort', {
           newContent: generatedCode,
@@ -219,7 +245,8 @@ async function generateCodeFromDescription(
   cellsAfter: CellContext[],
   handleUpdate: (cellId: string, updates: Partial<CellState>) => void,
   handleSaveVersion: (message: string) => Promise<void>,
-  onError: (error: string) => void
+  onError: (error: string) => void,
+  setNotebook: React.Dispatch<React.SetStateAction<NotebookState>>
 ): Promise<CellState | null> {
   handleUpdate(cellId, { isSyncing: true });
   try {
@@ -233,6 +260,12 @@ async function generateCodeFromDescription(
 
     if (syncResult.success && syncResult.result) {
       const generatedCode = syncResult.result;
+
+      // Update notebook symbols from LLM response
+      if (syncResult.notebookSymbols) {
+        updateNotebookSymbols(setNotebook, syncResult.notebookSymbols);
+      }
+
       const [shortResult, fullResult] = await Promise.all([
         window.promptbook.ai.sync(cellId, 'codeToShort', {
           newContent: generatedCode,
@@ -406,7 +439,8 @@ async function syncFromShort(
   cell: CellState,
   cellsBefore: CellContext[],
   cellsAfter: CellContext[],
-  handleUpdate: (cellId: string, updates: Partial<CellState>) => void
+  handleUpdate: (cellId: string, updates: Partial<CellState>) => void,
+  setNotebook: React.Dispatch<React.SetStateAction<NotebookState>>
 ): Promise<void> {
   const shortContent = cell.shortDescription?.trim();
   if (!shortContent) {
@@ -421,6 +455,11 @@ async function syncFromShort(
     cellsBefore,
     cellsAfter,
   });
+
+  // Update notebook symbols from LLM response
+  if (codeResult.notebookSymbols) {
+    updateNotebookSymbols(setNotebook, codeResult.notebookSymbols);
+  }
 
   const fullResult = await window.promptbook.ai.sync(cellId, 'shortToPseudo', {
     newContent: shortContent,
@@ -445,7 +484,8 @@ async function syncFromPseudo(
   cell: CellState,
   cellsBefore: CellContext[],
   cellsAfter: CellContext[],
-  handleUpdate: (cellId: string, updates: Partial<CellState>) => void
+  handleUpdate: (cellId: string, updates: Partial<CellState>) => void,
+  setNotebook: React.Dispatch<React.SetStateAction<NotebookState>>
 ): Promise<void> {
   const pseudoContent = cell.pseudoCode?.trim();
   if (!pseudoContent) {
@@ -460,6 +500,11 @@ async function syncFromPseudo(
     cellsBefore,
     cellsAfter,
   });
+
+  // Update notebook symbols from LLM response
+  if (codeResult.notebookSymbols) {
+    updateNotebookSymbols(setNotebook, codeResult.notebookSymbols);
+  }
 
   const shortResult = await window.promptbook.ai.sync(cellId, 'pseudoToShort', {
     newContent: pseudoContent,
