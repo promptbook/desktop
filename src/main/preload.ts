@@ -1,66 +1,33 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 
-// Types for kernel outputs
-export interface KernelOutput {
-  type: 'stdout' | 'stderr' | 'result' | 'display' | 'error' | 'status';
-  content: string;
-  mimeType?: string;
-  executionCount?: number;
-}
+// Import shared types from @promptbook/core
+import type {
+  KernelOutput,
+  KernelState,
+  PythonEnvironment,
+  Project,
+  ProjectSettings,
+  ProjectFileEntry,
+  TabState,
+  SidebarState,
+  SessionState,
+} from '@promptbook/core';
 
-export interface PythonEnvironment {
-  path: string;
-  name: string;
-  version: string;
-  type: 'venv' | 'conda' | 'system' | 'pyenv' | 'pipenv';
-  hasIpykernel: boolean;
-}
+// Re-export types for consumers of this preload
+export type {
+  KernelOutput,
+  KernelState,
+  PythonEnvironment,
+  Project,
+  ProjectSettings,
+  ProjectFileEntry,
+  TabState,
+  SidebarState,
+  SessionState,
+};
 
-export type KernelState = 'idle' | 'busy' | 'starting' | 'dead' | 'disconnected';
-
-// Types for project management
-export interface Project {
-  id: string;
-  name: string;
-  path: string;
-  created: string;
-  lastOpened: string;
-  color?: string;
-  icon?: string;
-}
-
-export interface ProjectSettings {
-  projectsRootPath: string;
-  lastOpenedProjectId: string | null;
-  recentProjects: string[];
-}
-
-export interface FileEntry {
-  name: string;
-  path: string;
-  isDirectory: boolean;
-  absolutePath: string;
-}
-
-export interface TabState {
-  id: string;
-  filePath: string;
-  scrollPosition: number;
-  activeCellId: string | null;
-}
-
-export interface SidebarState {
-  isVisible: boolean;
-  isPinned: boolean;
-  width: number;
-}
-
-export interface SessionState {
-  projectId: string;
-  openTabs: TabState[];
-  activeTabId: string | null;
-  sidebar: SidebarState;
-}
+// Alias for backward compatibility
+export type FileEntry = ProjectFileEntry;
 
 contextBridge.exposeInMainWorld('promptbook', {
   kernel: {
@@ -176,6 +143,8 @@ contextBridge.exposeInMainWorld('promptbook', {
       ipcRenderer.invoke('project:readFile', projectId, relativePath),
     writeFile: (projectId: string, relativePath: string, content: string) =>
       ipcRenderer.invoke('project:writeFile', projectId, relativePath, content),
+    saveNotebook: (projectId: string, relativePath: string, notebook: unknown) =>
+      ipcRenderer.invoke('project:saveNotebook', projectId, relativePath, notebook),
   },
   session: {
     load: (projectId: string) => ipcRenderer.invoke('session:load', projectId),

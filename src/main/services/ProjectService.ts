@@ -3,42 +3,17 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as crypto from 'crypto';
 import Store from 'electron-store';
+import type { Project, ProjectSettings, ProjectFileEntry } from '@promptbook/core';
+import { resolveWithin } from '@promptbook/core/utils';
 
-export interface Project {
-  id: string;
-  name: string;
-  path: string;
-  created: string;
-  lastOpened: string;
-  color?: string;
-  icon?: string;
-}
-
-export interface ProjectSettings {
-  projectsRootPath: string;
-  lastOpenedProjectId: string | null;
-  recentProjects: string[]; // Array of project IDs
-}
+// Re-export types for backward compatibility
+export type { Project, ProjectSettings, ProjectFileEntry };
+export type FileEntry = ProjectFileEntry;
 
 const DEFAULT_PROJECTS_ROOT = path.join(os.homedir(), 'promptbook_projects');
 
-/**
- * Validate and resolve a relative path to prevent path traversal attacks.
- * Throws if the resolved path escapes the root directory.
- */
-function validateRelativePath(rootDir: string, relativePath: string): string {
-  // Normalize and resolve the full path
-  const resolved = path.resolve(rootDir, relativePath);
-  // Ensure the resolved path starts with the root directory
-  const normalizedRoot = path.resolve(rootDir) + path.sep;
-  const normalizedResolved = path.resolve(resolved);
-
-  if (!normalizedResolved.startsWith(normalizedRoot) && normalizedResolved !== path.resolve(rootDir)) {
-    throw new Error(`Path traversal detected: ${relativePath}`);
-  }
-
-  return resolved;
-}
+// Alias for backward compatibility within this file
+const validateRelativePath = resolveWithin;
 
 const defaultProjectSettings: ProjectSettings = {
   projectsRootPath: DEFAULT_PROJECTS_ROOT,
@@ -315,13 +290,6 @@ class ProjectService {
       return false;
     }
   }
-}
-
-export interface FileEntry {
-  name: string;
-  path: string;
-  isDirectory: boolean;
-  absolutePath: string;
 }
 
 // Export singleton instance
