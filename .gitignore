@@ -1,1 +1,7 @@
 test-screenshots/
+playwright-report/
+test-results/
+
+# Temporary notebook files
+untitled_*.yaml
+test.yaml
