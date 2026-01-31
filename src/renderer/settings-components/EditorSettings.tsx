@@ -32,7 +32,7 @@ export function EditorSettings({ defaultTab, onDefaultTabChange }: EditorSetting
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                     <path d="M2 4h12M2 8h8M2 12h6" />
                   </svg>
-                  <span>Short</span>
+                  <span>Instructions</span>
                 </>
               )}
               {tab === 'pseudo' && (

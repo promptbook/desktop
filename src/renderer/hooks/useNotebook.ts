@@ -359,7 +359,8 @@ export function useNotebook(
   const notebookRef = useRef(notebook);
   const activeCellIdRef = useRef(activeCellId);
   const copiedCellRef = useRef(copiedCell);
-  const currentFileRef = useRef<string | null>(initialFilePath);
+  // Initialize to null so the first load effect runs
+  const currentFileRef = useRef<string | null>(null);
 
   useEffect(() => { notebookRef.current = notebook; }, [notebook]);
   useEffect(() => { activeCellIdRef.current = activeCellId; }, [activeCellId]);
