@@ -2,6 +2,8 @@
 
 Electron-based desktop application for AI-powered notebook development.
 
+![Promptbook Screenshot](assets/screenshot.png)
+
 ## Features
 
 ### Project Management
