@@ -56,7 +56,8 @@ export function useNotebook(
   projectId: string | undefined,
   onError: (error: string) => void,
   setEnvironmentPickerOpen: (open: boolean) => void,
-  handleSaveVersion: (message: string) => Promise<void>
+  handleSaveVersion: (message: string) => Promise<void>,
+  defaultTab: 'short' | 'pseudo' | 'code' = 'short'
 ): UseNotebookReturn {
   const [notebook, setNotebook] = useState<NotebookState>(createEmptyNotebook());
   const [filePath, setFilePath] = useState<string | null>(initialFilePath);
@@ -127,6 +128,10 @@ export function useNotebook(
     const newCell = cellType === 'text'
       ? createTextCell(`cell-${Date.now()}`)
       : createCodeCell(`cell-${Date.now()}`);
+    // Set default tab for code cells
+    if (cellType === 'code') {
+      newCell.lastEditedTab = defaultTab;
+    }
     setNotebook((prev) => {
       if (!afterCellId) {
         return { ...prev, cells: [...prev.cells, newCell] };
@@ -136,12 +141,16 @@ export function useNotebook(
       newCells.splice(index + 1, 0, newCell);
       return { ...prev, cells: newCells };
     });
-  }, []);
+  }, [defaultTab]);
 
   const handleAddCellAbove = useCallback((cellType: CellType = 'code') => {
     const newCell = cellType === 'text'
       ? createTextCell(`cell-${Date.now()}`)
       : createCodeCell(`cell-${Date.now()}`);
+    // Set default tab for code cells
+    if (cellType === 'code') {
+      newCell.lastEditedTab = defaultTab;
+    }
     setNotebook((prev) => {
       if (!activeCellId) {
         return { ...prev, cells: [newCell, ...prev.cells] };
@@ -152,7 +161,7 @@ export function useNotebook(
       return { ...prev, cells: newCells };
     });
     setActiveCellId(newCell.id);
-  }, [activeCellId]);
+  }, [activeCellId, defaultTab]);
 
   const handleMoveCell = useCallback((cellId: string, direction: 'up' | 'down') => {
     setNotebook((prev) => {

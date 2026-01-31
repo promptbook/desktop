@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from 'react';
 
+export type ThemePreference = 'system' | 'light' | 'dark';
+
+export type DefaultTab = 'short' | 'pseudo' | 'code';
+
 export interface AppSettings {
+  theme: ThemePreference;
+  editor: {
+    defaultTab: DefaultTab;
+  };
   python: {
     selectedEnvironment?: string;
   };
@@ -23,6 +31,10 @@ export interface AppSettings {
 }
 
 export const defaultSettings: AppSettings = {
+  theme: 'system',
+  editor: {
+    defaultTab: 'short',
+  },
   python: {},
   ai: {
     provider: 'agent',
@@ -69,6 +81,14 @@ export function Settings({ isOpen, onClose, settings, onSave }: SettingsProps) {
     setLocalSettings((s) => ({ ...s, spellcheck: { ...s.spellcheck, ...updates } }));
   };
 
+  const updateTheme = (theme: AppSettings['theme']) => {
+    setLocalSettings((s) => ({ ...s, theme }));
+  };
+
+  const updateEditor = (updates: Partial<AppSettings['editor']>) => {
+    setLocalSettings((s) => ({ ...s, editor: { ...s.editor, ...updates } }));
+  };
+
   // Available languages for spell check
   const spellcheckLanguages = [
     { code: 'en-US', name: 'English (US)' },
@@ -97,6 +117,114 @@ export function Settings({ isOpen, onClose, settings, onSave }: SettingsProps) {
         </div>
 
         <div className="settings-content">
+          {/* Appearance Section */}
+          <section className="settings-section">
+            <h3>
+              <span className="settings-icon">
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <circle cx="9" cy="9" r="3" />
+                  <path d="M9 2v2M9 14v2M2 9h2M14 9h2M4.2 4.2l1.4 1.4M12.4 12.4l1.4 1.4M4.2 13.8l1.4-1.4M12.4 5.6l1.4-1.4" />
+                </svg>
+              </span>
+              Appearance
+            </h3>
+            <div className="settings-field">
+              <label>Theme</label>
+              <div className="settings-theme-grid">
+                {(['system', 'light', 'dark'] as const).map((theme) => (
+                  <button
+                    key={theme}
+                    className={`settings-theme-btn ${localSettings.theme === theme ? 'active' : ''}`}
+                    onClick={() => updateTheme(theme)}
+                  >
+                    {theme === 'system' && (
+                      <>
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                          <rect x="2" y="3" width="12" height="9" rx="1" />
+                          <path d="M5 15h6M8 12v3" />
+                        </svg>
+                        <span>System</span>
+                      </>
+                    )}
+                    {theme === 'light' && (
+                      <>
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                          <circle cx="8" cy="8" r="3" />
+                          <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" />
+                        </svg>
+                        <span>Light</span>
+                      </>
+                    )}
+                    {theme === 'dark' && (
+                      <>
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                          <path d="M13.5 8.5a5.5 5.5 0 1 1-6-6 4 4 0 0 0 6 6z" />
+                        </svg>
+                        <span>Dark</span>
+                      </>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <p className="settings-hint">
+                System follows your OS appearance settings
+              </p>
+            </div>
+          </section>
+
+          {/* Editor Section */}
+          <section className="settings-section">
+            <h3>
+              <span className="settings-icon">
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <rect x="2" y="2" width="14" height="14" rx="2" />
+                  <path d="M2 6h14M6 6v10" />
+                </svg>
+              </span>
+              Editor
+            </h3>
+            <div className="settings-field">
+              <label>Default Tab</label>
+              <div className="settings-theme-grid">
+                {(['short', 'pseudo', 'code'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    className={`settings-theme-btn ${localSettings.editor?.defaultTab === tab ? 'active' : ''}`}
+                    onClick={() => updateEditor({ defaultTab: tab })}
+                  >
+                    {tab === 'short' && (
+                      <>
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                          <path d="M2 4h12M2 8h8M2 12h6" />
+                        </svg>
+                        <span>Short</span>
+                      </>
+                    )}
+                    {tab === 'pseudo' && (
+                      <>
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                          <path d="M2 4h12M4 7h10M6 10h8M4 13h10" />
+                        </svg>
+                        <span>Pseudo</span>
+                      </>
+                    )}
+                    {tab === 'code' && (
+                      <>
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                          <path d="M5 4l-3 4 3 4M11 4l3 4-3 4M9 2l-2 12" />
+                        </svg>
+                        <span>Code</span>
+                      </>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <p className="settings-hint">
+                Tab shown by default when creating new cells
+              </p>
+            </div>
+          </section>
+
           {/* Kernel Settings Section */}
           <section className="settings-section">
             <h3>

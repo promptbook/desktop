@@ -2,6 +2,7 @@ import { ipcMain, session, clipboard } from 'electron';
 import log from 'electron-log/main';
 
 interface AppSettings {
+  editor: { defaultTab: 'short' | 'pseudo' | 'code' };
   python: { selectedEnvironment?: string };
   ai: {
     provider: 'agent' | 'claude' | 'bedrock' | 'openai' | 'ollama';

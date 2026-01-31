@@ -61,13 +61,13 @@ export function useCellExecution({
         .filter((c) => c.cellType === 'code')
         .map((c) => ({ shortDescription: c.shortDescription || '', code: c.code || '' }));
 
-      const hasDescription = cell.shortDescription?.trim() || cell.fullDescription?.trim();
+      const hasDescription = cell.shortDescription?.trim() || cell.pseudoCode?.trim();
       const hasCode = cell.code?.trim();
 
       // Handle dirty cell with parameter changes
       if (cell.isDirty && hasDescription && hasCode) {
         const currentShortParams = extractParams(cell.shortDescription || '');
-        const currentFullParams = extractParams(cell.fullDescription || '');
+        const currentFullParams = extractParams(cell.pseudoCode || '');
         const currentParams = { ...currentShortParams, ...currentFullParams };
 
         if (cell.lastSyncedParams) {
@@ -76,19 +76,19 @@ export function useCellExecution({
           if (added.length === 0 && removed.length === 0 && Object.keys(changed).length > 0) {
             const newCode = applyParamChangesToCode(cell.code, changed);
             const newShort = applyParamChangesToDescription(cell.shortDescription || '', changed);
-            const newFull = applyParamChangesToDescription(cell.fullDescription || '', changed);
+            const newFull = applyParamChangesToDescription(cell.pseudoCode || '', changed);
 
             handleUpdate(cellId, {
               code: newCode,
               shortDescription: newShort,
-              fullDescription: newFull,
+              pseudoCode: newFull,
               lastSyncedCode: newCode,
               lastSyncedShort: newShort,
-              lastSyncedFull: newFull,
+              lastSyncedPseudo: newFull,
               lastSyncedParams: currentParams,
               isDirty: false,
             });
-            cell = { ...cell, code: newCode, shortDescription: newShort, fullDescription: newFull };
+            cell = { ...cell, code: newCode, shortDescription: newShort, pseudoCode: newFull };
           }
         }
       }
@@ -135,7 +135,7 @@ export function useCellExecution({
         } else if (lastEdited === 'short') {
           await syncFromShort(cellId, cell, cellsBefore, cellsAfter, handleUpdate);
         } else {
-          await syncFromFull(cellId, cell, cellsBefore, cellsAfter, handleUpdate);
+          await syncFromPseudo(cellId, cell, cellsBefore, cellsAfter, handleUpdate);
         }
       } catch (error) {
         handleUpdate(cellId, { isSyncing: false });
@@ -160,10 +160,10 @@ async function syncCellWithAI(
 ): Promise<CellState | null> {
   handleUpdate(cellId, { isSyncing: true });
   try {
-    const description = cell.fullDescription?.trim() || cell.shortDescription?.trim();
-    const syncResult = await window.promptbook.ai.sync(cellId, 'fullToCode', {
+    const description = cell.pseudoCode?.trim() || cell.shortDescription?.trim();
+    const syncResult = await window.promptbook.ai.sync(cellId, 'pseudoToCode', {
       newContent: description || '',
-      previousContent: cell.lastSyncedFull,
+      previousContent: cell.lastSyncedPseudo,
       existingCounterpart: cell.code,
       cellsBefore,
       cellsAfter,
@@ -176,29 +176,29 @@ async function syncCellWithAI(
           newContent: generatedCode,
           existingCounterpart: cell.shortDescription,
         }),
-        window.promptbook.ai.sync(cellId, 'codeToFull', {
+        window.promptbook.ai.sync(cellId, 'codeToPseudo', {
           newContent: generatedCode,
-          existingCounterpart: cell.fullDescription,
+          existingCounterpart: cell.pseudoCode,
         }),
       ]);
 
       const newShort = shortResult.success ? shortResult.result || cell.shortDescription : cell.shortDescription;
-      const newFull = fullResult.success ? fullResult.result || cell.fullDescription : cell.fullDescription;
+      const newFull = fullResult.success ? fullResult.result || cell.pseudoCode : cell.pseudoCode;
       const syncedParams = { ...extractParams(newShort), ...extractParams(newFull) };
 
       handleUpdate(cellId, {
         code: generatedCode,
         shortDescription: newShort,
-        fullDescription: newFull,
+        pseudoCode: newFull,
         lastSyncedCode: generatedCode,
         lastSyncedShort: newShort,
-        lastSyncedFull: newFull,
+        lastSyncedPseudo: newFull,
         lastSyncedParams: syncedParams,
         isDirty: false,
         isSyncing: false,
       });
       handleSaveVersion(`AI sync: ${newShort.slice(0, 50)}`);
-      return { ...cell, code: generatedCode, shortDescription: newShort, fullDescription: newFull };
+      return { ...cell, code: generatedCode, shortDescription: newShort, pseudoCode: newFull };
     } else {
       handleUpdate(cellId, { isSyncing: false });
       if (syncResult.error) onError(syncResult.error);
@@ -223,8 +223,8 @@ async function generateCodeFromDescription(
 ): Promise<CellState | null> {
   handleUpdate(cellId, { isSyncing: true });
   try {
-    const description = cell.fullDescription?.trim() || cell.shortDescription?.trim();
-    const syncResult = await window.promptbook.ai.sync(cellId, 'fullToCode', {
+    const description = cell.pseudoCode?.trim() || cell.shortDescription?.trim();
+    const syncResult = await window.promptbook.ai.sync(cellId, 'pseudoToCode', {
       newContent: description || '',
       existingCounterpart: cell.code,
       cellsBefore,
@@ -238,29 +238,29 @@ async function generateCodeFromDescription(
           newContent: generatedCode,
           existingCounterpart: cell.shortDescription,
         }),
-        window.promptbook.ai.sync(cellId, 'codeToFull', {
+        window.promptbook.ai.sync(cellId, 'codeToPseudo', {
           newContent: generatedCode,
-          existingCounterpart: cell.fullDescription,
+          existingCounterpart: cell.pseudoCode,
         }),
       ]);
 
       const newShort = shortResult.success ? shortResult.result || cell.shortDescription : cell.shortDescription;
-      const newFull = fullResult.success ? fullResult.result || cell.fullDescription : cell.fullDescription;
+      const newFull = fullResult.success ? fullResult.result || cell.pseudoCode : cell.pseudoCode;
       const syncedParams = { ...extractParams(newShort), ...extractParams(newFull) };
 
       handleUpdate(cellId, {
         code: generatedCode,
         shortDescription: newShort,
-        fullDescription: newFull,
+        pseudoCode: newFull,
         lastSyncedCode: generatedCode,
         lastSyncedShort: newShort,
-        lastSyncedFull: newFull,
+        lastSyncedPseudo: newFull,
         lastSyncedParams: syncedParams,
         isDirty: false,
         isSyncing: false,
       });
       handleSaveVersion(`AI sync: ${newShort.slice(0, 50)}`);
-      return { ...cell, code: generatedCode, shortDescription: newShort, fullDescription: newFull };
+      return { ...cell, code: generatedCode, shortDescription: newShort, pseudoCode: newFull };
     } else {
       handleUpdate(cellId, { isSyncing: false });
       if (syncResult.error) onError(syncResult.error);
@@ -383,18 +383,18 @@ async function syncFromCode(
     existingCounterpart: cell.shortDescription,
   });
 
-  const fullResult = await window.promptbook.ai.sync(cellId, 'codeToFull', {
+  const fullResult = await window.promptbook.ai.sync(cellId, 'codeToPseudo', {
     newContent: codeContent,
     previousContent: cell.lastSyncedCode,
-    existingCounterpart: cell.fullDescription,
+    existingCounterpart: cell.pseudoCode,
   });
 
   handleUpdate(cellId, {
     shortDescription: shortResult.success ? shortResult.result || '' : cell.shortDescription,
-    fullDescription: fullResult.success ? fullResult.result || '' : cell.fullDescription,
+    pseudoCode: fullResult.success ? fullResult.result || '' : cell.pseudoCode,
     lastSyncedCode: codeContent,
     lastSyncedShort: shortResult.success ? shortResult.result : cell.lastSyncedShort,
-    lastSyncedFull: fullResult.success ? fullResult.result : cell.lastSyncedFull,
+    lastSyncedPseudo: fullResult.success ? fullResult.result : cell.lastSyncedPseudo,
     isDirty: false,
     isSyncing: false,
   });
@@ -422,55 +422,55 @@ async function syncFromShort(
     cellsAfter,
   });
 
-  const fullResult = await window.promptbook.ai.sync(cellId, 'shortToFull', {
+  const fullResult = await window.promptbook.ai.sync(cellId, 'shortToPseudo', {
     newContent: shortContent,
     previousContent: cell.lastSyncedShort,
-    existingCounterpart: cell.fullDescription,
+    existingCounterpart: cell.pseudoCode,
   });
 
   handleUpdate(cellId, {
     code: codeResult.success ? codeResult.result || '' : cell.code,
-    fullDescription: fullResult.success ? fullResult.result || '' : cell.fullDescription,
+    pseudoCode: fullResult.success ? fullResult.result || '' : cell.pseudoCode,
     lastSyncedShort: shortContent,
     lastSyncedCode: codeResult.success ? codeResult.result : cell.lastSyncedCode,
-    lastSyncedFull: fullResult.success ? fullResult.result : cell.lastSyncedFull,
+    lastSyncedPseudo: fullResult.success ? fullResult.result : cell.lastSyncedPseudo,
     isDirty: false,
     isSyncing: false,
   });
 }
 
-// Helper: Sync from full description
-async function syncFromFull(
+// Helper: Sync from pseudo-code
+async function syncFromPseudo(
   cellId: string,
   cell: CellState,
   cellsBefore: CellContext[],
   cellsAfter: CellContext[],
   handleUpdate: (cellId: string, updates: Partial<CellState>) => void
 ): Promise<void> {
-  const fullContent = cell.fullDescription?.trim();
-  if (!fullContent) {
+  const pseudoContent = cell.pseudoCode?.trim();
+  if (!pseudoContent) {
     handleUpdate(cellId, { isSyncing: false });
     return;
   }
 
-  const codeResult = await window.promptbook.ai.sync(cellId, 'fullToCode', {
-    newContent: fullContent,
-    previousContent: cell.lastSyncedFull,
+  const codeResult = await window.promptbook.ai.sync(cellId, 'pseudoToCode', {
+    newContent: pseudoContent,
+    previousContent: cell.lastSyncedPseudo,
     existingCounterpart: cell.code,
     cellsBefore,
     cellsAfter,
   });
 
-  const shortResult = await window.promptbook.ai.sync(cellId, 'fullToShort', {
-    newContent: fullContent,
-    previousContent: cell.lastSyncedFull,
+  const shortResult = await window.promptbook.ai.sync(cellId, 'pseudoToShort', {
+    newContent: pseudoContent,
+    previousContent: cell.lastSyncedPseudo,
     existingCounterpart: cell.shortDescription,
   });
 
   handleUpdate(cellId, {
     code: codeResult.success ? codeResult.result || '' : cell.code,
     shortDescription: shortResult.success ? shortResult.result || '' : cell.shortDescription,
-    lastSyncedFull: fullContent,
+    lastSyncedPseudo: pseudoContent,
     lastSyncedCode: codeResult.success ? codeResult.result : cell.lastSyncedCode,
     lastSyncedShort: shortResult.success ? shortResult.result : cell.lastSyncedShort,
     isDirty: false,

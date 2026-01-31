@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   Notebook,
   NotebookState,
@@ -10,7 +10,7 @@ import {
   PackageInstallModal,
   KernelSymbol,
 } from '@promptbook/core/ui';
-import { Settings, AppSettings, defaultSettings } from './Settings';
+import { Settings, AppSettings, defaultSettings, ThemePreference } from './Settings';
 import { Icons } from './icons';
 import './types'; // Import global type declarations
 
@@ -35,6 +35,54 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [variableInspectorOpen, setVariableInspectorOpen] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
+  const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
+    window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false
+  );
+
+  // Listen for system theme changes
+  useEffect(() => {
+    const mediaQuery = window.matchMedia?.('(prefers-color-scheme: dark)');
+    if (!mediaQuery) return;
+
+    const handler = (e: MediaQueryListEvent) => setSystemPrefersDark(e.matches);
+    mediaQuery.addEventListener('change', handler);
+    return () => mediaQuery.removeEventListener('change', handler);
+  }, []);
+
+  // Compute effective theme class
+  const themeClass = useMemo(() => {
+    const theme = settings.theme || 'system';
+    if (theme === 'system') {
+      return systemPrefersDark ? 'theme-dark' : 'theme-light';
+    }
+    return `theme-${theme}`;
+  }, [settings.theme, systemPrefersDark]);
+
+  // Quick theme toggle (cycles: system -> light -> dark -> system)
+  const handleThemeToggle = useCallback(() => {
+    const currentTheme = settings.theme || 'system';
+    const nextTheme: ThemePreference =
+      currentTheme === 'system' ? 'light' :
+      currentTheme === 'light' ? 'dark' : 'system';
+    const newSettings = { ...settings, theme: nextTheme };
+    setSettings(newSettings);
+    window.promptbook.settings.save(newSettings);
+  }, [settings]);
+
+  // Get theme icon for current state
+  const getThemeIcon = () => {
+    const theme = settings.theme || 'system';
+    if (theme === 'system') return Icons.system;
+    if (theme === 'light') return Icons.sun;
+    return Icons.moon;
+  };
+
+  const getThemeLabel = () => {
+    const theme = settings.theme || 'system';
+    if (theme === 'system') return 'System';
+    if (theme === 'light') return 'Light';
+    return 'Dark';
+  };
 
   // Kernel hook
   const kernel = useKernel((error) => setGlobalError(error));
@@ -54,11 +102,12 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
     projectId,
     (error) => setGlobalError(error),
     kernel.setEnvironmentPickerOpen,
-    handleSaveVersion
+    handleSaveVersion,
+    settings.editor?.defaultTab || 'short'
   );
 
   // Auto-save hook
-  const autoSave = useAutoSave(notebookHook.notebook, notebookHook.filePath);
+  const autoSave = useAutoSave(notebookHook.notebook, notebookHook.filePath, projectId);
 
   // Find & Replace hook
   const findReplace = useFindReplace(notebookHook.notebook, notebookHook.setNotebook);
@@ -167,7 +216,7 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
   const fileName = notebookHook.filePath ? notebookHook.filePath.split('/').pop() : null;
 
   return (
-    <div className={`app ${variableInspectorOpen ? 'app--inspector-open' : ''}`}>
+    <div className={`app ${themeClass} ${variableInspectorOpen ? 'app--inspector-open' : ''}`}>
       <header className="app-header">
         <div className="app-brand">
           <span className="app-logo">{Icons.logo}</span>
@@ -224,6 +273,13 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
           >
             {Icons.variables}
             <span>Variables</span>
+          </button>
+          <button
+            onClick={handleThemeToggle}
+            title={`Theme: ${getThemeLabel()} (click to change)`}
+            className="toolbar-btn--theme"
+          >
+            {getThemeIcon()}
           </button>
           <button onClick={() => setSettingsOpen(true)} title="Settings">
             {Icons.settings}

@@ -38,6 +38,7 @@ log.info('Promptbook starting...');
 // Settings with electron-store
 // ============================================
 interface AppSettings {
+  editor: { defaultTab: 'short' | 'pseudo' | 'code' };
   python: { selectedEnvironment?: string };
   ai: {
     provider: 'agent' | 'claude' | 'bedrock' | 'openai' | 'ollama';
@@ -53,6 +54,7 @@ interface AppSettings {
 }
 
 const defaultSettings: AppSettings = {
+  editor: { defaultTab: 'short' },
   python: {},
   ai: { provider: 'agent' },
   kernel: { startupTimeout: 30000 },
@@ -68,6 +70,7 @@ const store = new Store<AppSettings>({
 // Get current settings
 function getSettings(): AppSettings {
   return {
+    editor: store.get('editor', defaultSettings.editor),
     python: store.get('python', defaultSettings.python),
     ai: store.get('ai', defaultSettings.ai),
     kernel: store.get('kernel', defaultSettings.kernel),
@@ -77,6 +80,7 @@ function getSettings(): AppSettings {
 
 // Save settings
 function saveSettings(settings: AppSettings): void {
+  store.set('editor', settings.editor);
   store.set('python', settings.python);
   store.set('ai', settings.ai);
   store.set('kernel', settings.kernel);

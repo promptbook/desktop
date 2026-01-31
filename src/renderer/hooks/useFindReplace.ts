@@ -44,7 +44,7 @@ export function useFindReplace(
     for (const cell of notebook.cells) {
       if (cell.cellType === 'code') {
         searchIn(cell.shortDescription, 'shortDescription', cell.id);
-        searchIn(cell.fullDescription, 'fullDescription', cell.id);
+        searchIn(cell.pseudoCode, 'pseudoCode', cell.id);
         searchIn(cell.code, 'code', cell.id);
       } else {
         searchIn(cell.textContent, 'textContent', cell.id);
@@ -86,7 +86,7 @@ export function useFindReplace(
 
         const newCell = { ...cell };
         const fields: Array<keyof CellState> = cell.cellType === 'code'
-          ? ['shortDescription', 'fullDescription', 'code']
+          ? ['shortDescription', 'pseudoCode', 'code']
           : ['textContent'];
 
         for (const field of fields) {

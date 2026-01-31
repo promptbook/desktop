@@ -95,7 +95,7 @@ async function aiSyncWithAgent(
     }
 
     // Parse the result based on direction
-    const isToCode = direction === 'toCode' || direction === 'fullToCode' || direction === 'shortToCode';
+    const isToCode = direction === 'toCode' || direction === 'pseudoToCode' || direction === 'shortToCode';
     const { code, symbols } = parseCodeGenerationResult(rawResult, isToCode);
 
     return { success: true, result: code, symbols };
@@ -124,7 +124,7 @@ async function aiSyncWithClaude(
   const textBlock = message.content.find((block) => block.type === 'text');
   if (textBlock && textBlock.type === 'text') {
     const rawResult = textBlock.text;
-    const isToCode = direction === 'toCode' || direction === 'fullToCode' || direction === 'shortToCode';
+    const isToCode = direction === 'toCode' || direction === 'pseudoToCode' || direction === 'shortToCode';
     const { code, symbols } = parseCodeGenerationResult(rawResult, isToCode);
     return { success: true, result: code, symbols };
   }

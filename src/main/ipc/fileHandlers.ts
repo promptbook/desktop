@@ -6,7 +6,7 @@ import * as yaml from 'yaml';
 interface NotebookCell {
   cellType: 'code' | 'text';
   shortDescription?: string;
-  fullDescription?: string;
+  pseudoCode?: string;
   code?: string;
   textContent?: string;
 }
@@ -153,7 +153,7 @@ export function registerFileHandlers(mainWindow: () => BrowserWindow | null): vo
         }
       } else if (cell.cellType === 'code') {
         // Add description as comment if available
-        const description = cell.shortDescription || cell.fullDescription;
+        const description = cell.shortDescription || cell.pseudoCode;
         if (description) {
           lines.push('# ' + description.split('\n').join('\n# '));
         }
