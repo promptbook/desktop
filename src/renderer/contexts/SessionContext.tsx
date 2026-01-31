@@ -77,56 +77,26 @@ interface SessionContextType {
 // Create context
 const SessionContext = createContext<SessionContextType | null>(null);
 
-// Provider
-interface SessionProviderProps {
-  children: ReactNode;
-}
+// Generate unique tab ID
+const generateTabId = () => `tab-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
-export function SessionProvider({ children }: SessionProviderProps) {
-  const [state, dispatch] = useReducer(sessionReducer, initialState);
-  const { state: projectState } = useProject();
-  const lastProjectId = useRef<string | null>(null);
+// Helper type for dispatch function
+type SessionDispatch = React.Dispatch<SessionAction>;
 
-  // Load session when project changes
-  useEffect(() => {
-    const projectId = projectState.currentProject?.id;
-
-    // Avoid reloading if same project
-    if (projectId === lastProjectId.current) return;
-    lastProjectId.current = projectId ?? null;
-
-    if (projectId) {
-      loadSession(projectId);
-    } else {
-      dispatch({ type: 'SET_SESSION', payload: null });
-    }
-  }, [projectState.currentProject?.id]);
-
-  const loadSession = async (projectId: string) => {
-    dispatch({ type: 'SET_LOADING', payload: true });
-    try {
-      const result = await window.promptbook.session.load(projectId);
-      if (result.success && result.session) {
-        dispatch({ type: 'SET_SESSION', payload: result.session });
-      }
-    } catch (err) {
-      console.error('Failed to load session:', err);
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
-    }
-  };
-
-  // Generate unique tab ID
-  const generateTabId = () => `tab-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-
-  const addTab = useCallback(async (filePath: string): Promise<string | null> => {
-    const projectId = projectState.currentProject?.id;
+// Tab operations factory
+function createTabOperations(
+  getProjectId: () => string | undefined,
+  getOpenTabs: () => TabState[] | undefined,
+  dispatch: SessionDispatch
+) {
+  const addTab = async (filePath: string): Promise<string | null> => {
+    const projectId = getProjectId();
     if (!projectId) return null;
 
     // Check if tab already exists
-    const existingTab = state.session?.openTabs.find(t => t.filePath === filePath);
+    const existingTab = getOpenTabs()?.find(t => t.filePath === filePath);
     if (existingTab) {
-      // Just activate the existing tab (inline to avoid dependency cycle)
+      // Just activate the existing tab
       try {
         const result = await window.promptbook.session.setActiveTab(projectId, existingTab.id);
         if (result.success && result.session) {
@@ -155,10 +125,10 @@ export function SessionProvider({ children }: SessionProviderProps) {
       console.error('Failed to add tab:', err);
     }
     return null;
-  }, [projectState.currentProject?.id, state.session?.openTabs]);
+  };
 
-  const removeTab = useCallback(async (tabId: string): Promise<void> => {
-    const projectId = projectState.currentProject?.id;
+  const removeTab = async (tabId: string): Promise<void> => {
+    const projectId = getProjectId();
     if (!projectId) return;
 
     try {
@@ -169,10 +139,10 @@ export function SessionProvider({ children }: SessionProviderProps) {
     } catch (err) {
       console.error('Failed to remove tab:', err);
     }
-  }, [projectState.currentProject?.id]);
+  };
 
-  const setActiveTab = useCallback(async (tabId: string): Promise<void> => {
-    const projectId = projectState.currentProject?.id;
+  const setActiveTab = async (tabId: string): Promise<void> => {
+    const projectId = getProjectId();
     if (!projectId) return;
 
     try {
@@ -183,10 +153,10 @@ export function SessionProvider({ children }: SessionProviderProps) {
     } catch (err) {
       console.error('Failed to set active tab:', err);
     }
-  }, [projectState.currentProject?.id]);
+  };
 
-  const updateTab = useCallback(async (tabId: string, updates: Partial<Omit<TabState, 'id'>>): Promise<void> => {
-    const projectId = projectState.currentProject?.id;
+  const updateTab = async (tabId: string, updates: Partial<Omit<TabState, 'id'>>): Promise<void> => {
+    const projectId = getProjectId();
     if (!projectId) return;
 
     try {
@@ -197,10 +167,10 @@ export function SessionProvider({ children }: SessionProviderProps) {
     } catch (err) {
       console.error('Failed to update tab:', err);
     }
-  }, [projectState.currentProject?.id]);
+  };
 
-  const reorderTabs = useCallback(async (fromIndex: number, toIndex: number): Promise<void> => {
-    const projectId = projectState.currentProject?.id;
+  const reorderTabs = async (fromIndex: number, toIndex: number): Promise<void> => {
+    const projectId = getProjectId();
     if (!projectId) return;
 
     try {
@@ -211,10 +181,18 @@ export function SessionProvider({ children }: SessionProviderProps) {
     } catch (err) {
       console.error('Failed to reorder tabs:', err);
     }
-  }, [projectState.currentProject?.id]);
+  };
 
-  const toggleSidebar = useCallback(async (): Promise<void> => {
-    const projectId = projectState.currentProject?.id;
+  return { addTab, removeTab, setActiveTab, updateTab, reorderTabs };
+}
+
+// Sidebar operations factory
+function createSidebarOperations(
+  getProjectId: () => string | undefined,
+  dispatch: SessionDispatch
+) {
+  const toggleSidebar = async (): Promise<void> => {
+    const projectId = getProjectId();
     if (!projectId) return;
 
     try {
@@ -225,10 +203,10 @@ export function SessionProvider({ children }: SessionProviderProps) {
     } catch (err) {
       console.error('Failed to toggle sidebar:', err);
     }
-  }, [projectState.currentProject?.id]);
+  };
 
-  const pinSidebar = useCallback(async (pinned: boolean): Promise<void> => {
-    const projectId = projectState.currentProject?.id;
+  const pinSidebar = async (pinned: boolean): Promise<void> => {
+    const projectId = getProjectId();
     if (!projectId) return;
 
     try {
@@ -239,10 +217,10 @@ export function SessionProvider({ children }: SessionProviderProps) {
     } catch (err) {
       console.error('Failed to pin sidebar:', err);
     }
-  }, [projectState.currentProject?.id]);
+  };
 
-  const setSidebarVisible = useCallback(async (visible: boolean): Promise<void> => {
-    const projectId = projectState.currentProject?.id;
+  const setSidebarVisible = async (visible: boolean): Promise<void> => {
+    const projectId = getProjectId();
     if (!projectId) return;
 
     try {
@@ -253,10 +231,10 @@ export function SessionProvider({ children }: SessionProviderProps) {
     } catch (err) {
       console.error('Failed to update sidebar visibility:', err);
     }
-  }, [projectState.currentProject?.id]);
+  };
 
-  const resizeSidebar = useCallback(async (width: number): Promise<void> => {
-    const projectId = projectState.currentProject?.id;
+  const resizeSidebar = async (width: number): Promise<void> => {
+    const projectId = getProjectId();
     if (!projectId) return;
 
     try {
@@ -267,30 +245,89 @@ export function SessionProvider({ children }: SessionProviderProps) {
     } catch (err) {
       console.error('Failed to resize sidebar:', err);
     }
+  };
+
+  return { toggleSidebar, pinSidebar, setSidebarVisible, resizeSidebar };
+}
+
+// Helper functions factory
+function createHelperOperations(getSession: () => SessionState | null) {
+  const getActiveTab = (): TabState | null => {
+    const session = getSession();
+    if (!session?.activeTabId) return null;
+    return session.openTabs.find(t => t.id === session.activeTabId) || null;
+  };
+
+  const getTabByFilePath = (filePath: string): TabState | null => {
+    const session = getSession();
+    return session?.openTabs.find(t => t.filePath === filePath) || null;
+  };
+
+  return { getActiveTab, getTabByFilePath };
+}
+
+// Provider
+interface SessionProviderProps {
+  children: ReactNode;
+}
+
+export function SessionProvider({ children }: SessionProviderProps) {
+  const [state, dispatch] = useReducer(sessionReducer, initialState);
+  const { state: projectState } = useProject();
+  const lastProjectId = useRef<string | null>(null);
+
+  // Stable getters for factory functions
+  const getProjectId = useCallback(() => projectState.currentProject?.id, [projectState.currentProject?.id]);
+  const getOpenTabs = useCallback(() => state.session?.openTabs, [state.session?.openTabs]);
+  const getSession = useCallback(() => state.session, [state.session]);
+
+  // Load session when project changes
+  useEffect(() => {
+    const projectId = projectState.currentProject?.id;
+
+    // Avoid reloading if same project
+    if (projectId === lastProjectId.current) return;
+    lastProjectId.current = projectId ?? null;
+
+    const loadSession = async (id: string) => {
+      dispatch({ type: 'SET_LOADING', payload: true });
+      try {
+        const result = await window.promptbook.session.load(id);
+        if (result.success && result.session) {
+          dispatch({ type: 'SET_SESSION', payload: result.session });
+        }
+      } catch (err) {
+        console.error('Failed to load session:', err);
+      } finally {
+        dispatch({ type: 'SET_LOADING', payload: false });
+      }
+    };
+
+    if (projectId) {
+      loadSession(projectId);
+    } else {
+      dispatch({ type: 'SET_SESSION', payload: null });
+    }
   }, [projectState.currentProject?.id]);
 
-  const getActiveTab = useCallback((): TabState | null => {
-    if (!state.session?.activeTabId) return null;
-    return state.session.openTabs.find(t => t.id === state.session?.activeTabId) || null;
-  }, [state.session]);
-
-  const getTabByFilePath = useCallback((filePath: string): TabState | null => {
-    return state.session?.openTabs.find(t => t.filePath === filePath) || null;
-  }, [state.session?.openTabs]);
+  // Create operations using factories
+  const tabOps = createTabOperations(getProjectId, getOpenTabs, dispatch);
+  const sidebarOps = createSidebarOperations(getProjectId, dispatch);
+  const helperOps = createHelperOperations(getSession);
 
   const value: SessionContextType = {
     state,
-    addTab,
-    removeTab,
-    setActiveTab,
-    updateTab,
-    reorderTabs,
-    toggleSidebar,
-    pinSidebar,
-    setSidebarVisible,
-    resizeSidebar,
-    getActiveTab,
-    getTabByFilePath,
+    addTab: tabOps.addTab,
+    removeTab: tabOps.removeTab,
+    setActiveTab: tabOps.setActiveTab,
+    updateTab: tabOps.updateTab,
+    reorderTabs: tabOps.reorderTabs,
+    toggleSidebar: sidebarOps.toggleSidebar,
+    pinSidebar: sidebarOps.pinSidebar,
+    setSidebarVisible: sidebarOps.setSidebarVisible,
+    resizeSidebar: sidebarOps.resizeSidebar,
+    getActiveTab: helperOps.getActiveTab,
+    getTabByFilePath: helperOps.getTabByFilePath,
   };
 
   return (

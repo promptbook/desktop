@@ -78,6 +78,35 @@ function CreateInput({
   );
 }
 
+// Rename input component
+function RenameInput({
+  value,
+  onChange,
+  onSubmit,
+  onCancel,
+}: {
+  value: string;
+  onChange: (name: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <input
+      type="text"
+      className="file-tree__rename-input"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={onSubmit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') onSubmit();
+        if (e.key === 'Escape') onCancel();
+      }}
+      autoFocus
+      onClick={(e) => e.stopPropagation()}
+    />
+  );
+}
+
 // File tree item component
 function FileTreeItem({
   entry,
@@ -128,18 +157,11 @@ function FileTreeItem({
           {entry.isDirectory ? <FolderIcon /> : <FileIcon />}
         </span>
         {isRenaming && renaming ? (
-          <input
-            type="text"
-            className="file-tree__rename-input"
+          <RenameInput
             value={renaming.name}
-            onChange={(e) => onRenameChange(e.target.value)}
-            onBlur={onRenameSubmit}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') onRenameSubmit();
-              if (e.key === 'Escape') onRenameCancel();
-            }}
-            autoFocus
-            onClick={(e) => e.stopPropagation()}
+            onChange={onRenameChange}
+            onSubmit={onRenameSubmit}
+            onCancel={onRenameCancel}
           />
         ) : (
           <span className="file-tree__name">{entry.name}</span>

@@ -11,6 +11,7 @@ export interface UseAutoSaveReturn {
 export function useAutoSave(
   notebook: NotebookState,
   filePath: string | null,
+  projectId?: string,
   autoSaveIntervalMs: number = 30000
 ): UseAutoSaveReturn {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -32,7 +33,13 @@ export function useAutoSave(
     const autoSave = async () => {
       if (hasUnsavedChanges && filePath) {
         try {
-          await window.promptbook.file.save(filePath, notebook);
+          if (projectId) {
+            // Project mode: use project saveNotebook API with relative path
+            await window.promptbook.project.saveNotebook(projectId, filePath, notebook);
+          } else {
+            // Standalone mode: use file.save API with absolute path
+            await window.promptbook.file.save(filePath, notebook);
+          }
           setHasUnsavedChanges(false);
           setLastSavedAt(new Date());
         } catch (error) {
@@ -55,7 +62,7 @@ export function useAutoSave(
         clearInterval(autoSaveIntervalRef.current);
       }
     };
-  }, [hasUnsavedChanges, filePath, notebook, autoSaveIntervalMs]);
+  }, [hasUnsavedChanges, filePath, projectId, notebook, autoSaveIntervalMs]);
 
   return {
     hasUnsavedChanges,

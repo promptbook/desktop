@@ -213,3 +213,52 @@
   background: var(--color-bg-tertiary, #2a2a40);
   color: var(--color-text-primary, #e8e8e8);
 }
+
+/* Tab rename input */
+.tab__rename-input {
+  flex: 1;
+  min-width: 60px;
+  padding: 2px 6px;
+  background: var(--color-bg-primary, #1a1a2e);
+  border: 1px solid var(--color-accent, #6366f1);
+  border-radius: 4px;
+  color: var(--color-text-primary, #e8e8e8);
+  font-size: 13px;
+  outline: none;
+}
+
+/* Tab context menu */
+.tab-context-menu {
+  position: fixed;
+  background: var(--color-bg-secondary, #252538);
+  border: 1px solid var(--color-border, #3a3a4d);
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 140px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  z-index: 1100;
+}
+
+.tab-context-menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  text-align: left;
+  color: var(--color-text-primary, #e8e8e8);
+  font-size: 13px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.tab-context-menu button:hover {
+  background: var(--color-bg-tertiary, #2a2a40);
+}
+
+.tab-context-menu hr {
+  border: none;
+  border-top: 1px solid var(--color-border, #3a3a4d);
+  margin: 4px 0;
+}

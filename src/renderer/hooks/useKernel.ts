@@ -1,5 +1,62 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { KernelState, PythonEnvironment } from '../types';
+
+/**
+ * Finds the best environment to auto-connect to.
+ * Priority 1: Local project venv (./.venv or ./venv)
+ * Priority 2: First environment with ipykernel installed
+ */
+function findBestEnvironment(envs: PythonEnvironment[]): PythonEnvironment | undefined {
+  const localVenv = envs.find(
+    (e) => e.type === 'venv' && (e.name === '.venv' || e.name === 'venv')
+  );
+  const withIpykernel = envs.find((e) => e.hasIpykernel);
+  return localVenv || withIpykernel;
+}
+
+interface SelectEnvCallbacks {
+  setInstallError: (error: string | null) => void;
+  setIsInstallingIpykernel: (installing: boolean) => void;
+  setEnvironments: (envs: PythonEnvironment[]) => void;
+  setSelectedEnvironment: (env: PythonEnvironment) => void;
+  setEnvironmentPickerOpen: (open: boolean) => void;
+}
+
+async function selectEnvironmentWithInstall(
+  env: PythonEnvironment,
+  callbacks: SelectEnvCallbacks
+): Promise<void> {
+  callbacks.setInstallError(null);
+
+  if (!env.hasIpykernel) {
+    callbacks.setIsInstallingIpykernel(true);
+    try {
+      const result = await window.promptbook.kernel.installIpykernel(env.path);
+      callbacks.setIsInstallingIpykernel(false);
+
+      if (!result.success) {
+        callbacks.setInstallError(result.error || 'Failed to install ipykernel');
+        return;
+      }
+
+      const updatedEnvs = await window.promptbook.kernel.scanEnvironments();
+      callbacks.setEnvironments(updatedEnvs);
+      env = updatedEnvs.find((e) => e.path === env.path) || env;
+    } catch (err) {
+      callbacks.setIsInstallingIpykernel(false);
+      callbacks.setInstallError(String(err));
+      return;
+    }
+  }
+
+  const result = await window.promptbook.kernel.selectEnvironment(env.path);
+  if (result.success) {
+    callbacks.setSelectedEnvironment(env);
+    callbacks.setEnvironmentPickerOpen(false);
+  } else {
+    callbacks.setInstallError(result.error || 'Failed to select environment');
+  }
+}
 
 export interface UseKernelReturn {
   kernelState: KernelState;
@@ -27,89 +84,32 @@ export function useKernel(onError: (error: string) => void): UseKernelReturn {
   const [isCreatingVenv, setIsCreatingVenv] = useState(false);
   const [installError, setInstallError] = useState<string | null>(null);
 
+  const selectEnvCallbacks = useMemo<SelectEnvCallbacks>(() => ({
+    setInstallError, setIsInstallingIpykernel, setEnvironments, setSelectedEnvironment, setEnvironmentPickerOpen,
+  }), []);
+
   // Load environments on mount and auto-connect
   useEffect(() => {
     window.promptbook.kernel.getStatus().then(({ state }) => setKernelState(state));
-
-    // Auto-connect to best available environment
     window.promptbook.kernel.scanEnvironments().then(async (envs) => {
       setEnvironments(envs);
-
-      // Skip auto-connect if already connected
       const status = await window.promptbook.kernel.getStatus();
-      if (status.state !== 'disconnected' && status.state !== 'dead') {
-        return;
-      }
-
-      // Priority 1: Local project venv (./.venv or ./venv)
-      const localVenv = envs.find(
-        (e) => e.type === 'venv' && (e.name === '.venv' || e.name === 'venv')
-      );
-
-      // Priority 2: First environment with ipykernel installed
-      const withIpykernel = envs.find((e) => e.hasIpykernel);
-
-      const autoEnv = localVenv || withIpykernel;
-      if (autoEnv) {
-        handleSelectEnvironmentInternal(autoEnv);
-      }
+      if (status.state !== 'disconnected' && status.state !== 'dead') return;
+      const autoEnv = findBestEnvironment(envs);
+      if (autoEnv) selectEnvironmentWithInstall(autoEnv, selectEnvCallbacks);
     });
-  }, []);
+  }, [selectEnvCallbacks]);
 
   // Set up kernel event listeners
   useEffect(() => {
-    const unsubscribeState = window.promptbook.kernel.onStateChange((state) => {
-      setKernelState(state);
-    });
-
-    const unsubscribeError = window.promptbook.kernel.onError((error) => {
-      onError(`Kernel error: ${error}`);
-    });
-
-    return () => {
-      unsubscribeState();
-      unsubscribeError();
-    };
+    const unsubscribeState = window.promptbook.kernel.onStateChange((state) => setKernelState(state));
+    const unsubscribeError = window.promptbook.kernel.onError((error) => onError(`Kernel error: ${error}`));
+    return () => { unsubscribeState(); unsubscribeError(); };
   }, [onError]);
 
-  const handleSelectEnvironmentInternal = async (env: PythonEnvironment) => {
-    setInstallError(null);
-
-    if (!env.hasIpykernel) {
-      // Need to install ipykernel first
-      setIsInstallingIpykernel(true);
-      try {
-        const result = await window.promptbook.kernel.installIpykernel(env.path);
-        setIsInstallingIpykernel(false);
-
-        if (!result.success) {
-          setInstallError(result.error || 'Failed to install ipykernel');
-          return;
-        }
-
-        // Refresh environments to get updated hasIpykernel status
-        const updatedEnvs = await window.promptbook.kernel.scanEnvironments();
-        setEnvironments(updatedEnvs);
-        env = updatedEnvs.find((e) => e.path === env.path) || env;
-      } catch (err) {
-        setIsInstallingIpykernel(false);
-        setInstallError(String(err));
-        return;
-      }
-    }
-
-    const result = await window.promptbook.kernel.selectEnvironment(env.path);
-    if (result.success) {
-      setSelectedEnvironment(env);
-      setEnvironmentPickerOpen(false);
-    } else {
-      setInstallError(result.error || 'Failed to select environment');
-    }
-  };
-
   const handleSelectEnvironment = useCallback(async (env: PythonEnvironment) => {
-    await handleSelectEnvironmentInternal(env);
-  }, []);
+    await selectEnvironmentWithInstall(env, selectEnvCallbacks);
+  }, [selectEnvCallbacks]);
 
   const handleRefreshEnvironments = useCallback(async () => {
     const envs = await window.promptbook.kernel.scanEnvironments();

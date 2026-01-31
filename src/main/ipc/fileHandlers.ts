@@ -20,6 +20,52 @@ interface NotebookExport {
   cells: NotebookCell[];
 }
 
+function generatePythonContent(notebook: NotebookExport): string {
+  const lines: string[] = [];
+
+  // Add header comment
+  lines.push('#!/usr/bin/env python3');
+  lines.push('"""');
+  if (notebook.metadata?.title) {
+    lines.push(notebook.metadata.title);
+  } else {
+    lines.push('Exported from Promptbook');
+  }
+  if (notebook.metadata?.author) {
+    lines.push(`Author: ${notebook.metadata.author}`);
+  }
+  if (notebook.metadata?.created) {
+    lines.push(`Created: ${notebook.metadata.created}`);
+  }
+  lines.push(`Exported: ${new Date().toISOString()}`);
+  lines.push('"""');
+  lines.push('');
+
+  // Process each cell
+  for (const cell of notebook.cells) {
+    if (cell.cellType === 'text') {
+      // Convert text cell to docstring/comment
+      if (cell.textContent) {
+        lines.push('# ' + cell.textContent.split('\n').join('\n# '));
+        lines.push('');
+      }
+    } else if (cell.cellType === 'code') {
+      // Add description as comment if available
+      const description = cell.shortDescription || cell.pseudoCode;
+      if (description) {
+        lines.push('# ' + description.split('\n').join('\n# '));
+      }
+      // Add the code
+      if (cell.code) {
+        lines.push(cell.code);
+        lines.push('');
+      }
+    }
+  }
+
+  return lines.join('\n');
+}
+
 export function registerFileHandlers(mainWindow: () => BrowserWindow | null): void {
   // List files in directory for @ autocomplete
   ipcMain.handle('file:listDir', async (_event, dirPath?: string) => {
@@ -122,50 +168,7 @@ export function registerFileHandlers(mainWindow: () => BrowserWindow | null): vo
       return { success: false, filePath: null };
     }
 
-    // Generate Python file content
-    const lines: string[] = [];
-
-    // Add header comment
-    lines.push('#!/usr/bin/env python3');
-    lines.push('"""');
-    if (notebook.metadata?.title) {
-      lines.push(notebook.metadata.title);
-    } else {
-      lines.push('Exported from Promptbook');
-    }
-    if (notebook.metadata?.author) {
-      lines.push(`Author: ${notebook.metadata.author}`);
-    }
-    if (notebook.metadata?.created) {
-      lines.push(`Created: ${notebook.metadata.created}`);
-    }
-    lines.push(`Exported: ${new Date().toISOString()}`);
-    lines.push('"""');
-    lines.push('');
-
-    // Process each cell
-    for (const cell of notebook.cells) {
-      if (cell.cellType === 'text') {
-        // Convert text cell to docstring/comment
-        if (cell.textContent) {
-          lines.push('# ' + cell.textContent.split('\n').join('\n# '));
-          lines.push('');
-        }
-      } else if (cell.cellType === 'code') {
-        // Add description as comment if available
-        const description = cell.shortDescription || cell.pseudoCode;
-        if (description) {
-          lines.push('# ' + description.split('\n').join('\n# '));
-        }
-        // Add the code
-        if (cell.code) {
-          lines.push(cell.code);
-          lines.push('');
-        }
-      }
-    }
-
-    const content = lines.join('\n');
+    const content = generatePythonContent(notebook);
     await fs.writeFile(result.filePath, content, 'utf-8');
     return { success: true, filePath: result.filePath };
   });

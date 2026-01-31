@@ -51,6 +51,286 @@ export interface UseNotebookReturn {
   listFiles: (dirPath?: string) => Promise<{ files: { name: string; path: string; isDirectory: boolean }[]; cwd: string }>;
 }
 
+// ============================================================================
+// Cell Operations Factory
+// ============================================================================
+
+interface CellOperationsConfig {
+  setNotebook: React.Dispatch<React.SetStateAction<NotebookState>>;
+  defaultTab: 'short' | 'pseudo' | 'code';
+  getActiveCellId: () => string | null;
+  setActiveCellId: (id: string | null) => void;
+}
+
+function createCellOperations(config: CellOperationsConfig) {
+  const { setNotebook, defaultTab, getActiveCellId, setActiveCellId } = config;
+
+  const handleAddCell = (afterCellId?: string, cellType: CellType = 'code') => {
+    const newCell = cellType === 'text'
+      ? createTextCell(`cell-${Date.now()}`)
+      : createCodeCell(`cell-${Date.now()}`);
+    if (cellType === 'code') newCell.lastEditedTab = defaultTab;
+    setNotebook((prev) => {
+      if (!afterCellId) return { ...prev, cells: [...prev.cells, newCell] };
+      const index = prev.cells.findIndex((c) => c.id === afterCellId);
+      const newCells = [...prev.cells];
+      newCells.splice(index + 1, 0, newCell);
+      return { ...prev, cells: newCells };
+    });
+  };
+
+  const handleAddCellAbove = (cellType: CellType = 'code') => {
+    const activeCellId = getActiveCellId();
+    const newCell = cellType === 'text'
+      ? createTextCell(`cell-${Date.now()}`)
+      : createCodeCell(`cell-${Date.now()}`);
+    if (cellType === 'code') newCell.lastEditedTab = defaultTab;
+    setNotebook((prev) => {
+      if (!activeCellId) return { ...prev, cells: [newCell, ...prev.cells] };
+      const index = prev.cells.findIndex((c) => c.id === activeCellId);
+      const newCells = [...prev.cells];
+      newCells.splice(index, 0, newCell);
+      return { ...prev, cells: newCells };
+    });
+    setActiveCellId(newCell.id);
+  };
+
+  const handleMoveCell = (cellId: string, direction: 'up' | 'down') => {
+    setNotebook((prev) => {
+      const index = prev.cells.findIndex((c) => c.id === cellId);
+      if (index === -1) return prev;
+      const newIndex = direction === 'up' ? index - 1 : index + 1;
+      if (newIndex < 0 || newIndex >= prev.cells.length) return prev;
+      const newCells = [...prev.cells];
+      const [movedCell] = newCells.splice(index, 1);
+      newCells.splice(newIndex, 0, movedCell);
+      return { ...prev, cells: newCells };
+    });
+  };
+
+  const handleDeleteCell = (cellId: string) => {
+    setNotebook((prev) => ({ ...prev, cells: prev.cells.filter((c) => c.id !== cellId) }));
+  };
+
+  return { handleAddCell, handleAddCellAbove, handleMoveCell, handleDeleteCell };
+}
+
+// ============================================================================
+// Copy/Paste Operations Factory
+// ============================================================================
+
+interface CopyPasteConfig {
+  getNotebook: () => NotebookState;
+  getActiveCellId: () => string | null;
+  setNotebook: React.Dispatch<React.SetStateAction<NotebookState>>;
+  setActiveCellId: (id: string | null) => void;
+  setCopiedCell: (cell: CellState | null) => void;
+  getCopiedCell: () => CellState | null;
+  handleDeleteCell: (cellId: string) => void;
+}
+
+function createCopyPasteOperations(config: CopyPasteConfig) {
+  const { getNotebook, getActiveCellId, setNotebook, setActiveCellId, setCopiedCell, getCopiedCell, handleDeleteCell } = config;
+
+  const handleCopyCell = () => {
+    const activeCellId = getActiveCellId();
+    if (!activeCellId) return;
+    const cell = getNotebook().cells.find((c) => c.id === activeCellId);
+    if (cell) setCopiedCell({ ...cell });
+  };
+
+  const handleCutCell = () => {
+    const activeCellId = getActiveCellId();
+    const notebook = getNotebook();
+    if (!activeCellId) return;
+    handleCopyCell();
+    handleDeleteCell(activeCellId);
+    const index = notebook.cells.findIndex((c) => c.id === activeCellId);
+    if (index < notebook.cells.length - 1) setActiveCellId(notebook.cells[index + 1].id);
+    else if (index > 0) setActiveCellId(notebook.cells[index - 1].id);
+  };
+
+  const handlePasteCell = () => {
+    const copiedCell = getCopiedCell();
+    const activeCellId = getActiveCellId();
+    if (!copiedCell) return;
+    const newCell = { ...copiedCell, id: `cell-${Date.now()}` };
+    setNotebook((prev) => {
+      if (!activeCellId) return { ...prev, cells: [...prev.cells, newCell] };
+      const index = prev.cells.findIndex((c) => c.id === activeCellId);
+      const newCells = [...prev.cells];
+      newCells.splice(index + 1, 0, newCell);
+      return { ...prev, cells: newCells };
+    });
+    setActiveCellId(newCell.id);
+  };
+
+  return { handleCopyCell, handleCutCell, handlePasteCell };
+}
+
+// ============================================================================
+// Run Operations Factory
+// ============================================================================
+
+function createRunOperations(
+  getNotebook: () => NotebookState,
+  getActiveCellId: () => string | null,
+  handleRunCell: (cellId: string) => Promise<void>
+) {
+  const handleRunAllCells = async () => {
+    for (const cell of getNotebook().cells.filter((c) => c.cellType === 'code')) {
+      await handleRunCell(cell.id);
+    }
+  };
+
+  const handleRunAbove = async () => {
+    const activeCellId = getActiveCellId();
+    if (!activeCellId) return;
+    const notebook = getNotebook();
+    const activeIndex = notebook.cells.findIndex((c) => c.id === activeCellId);
+    if (activeIndex <= 0) return;
+    for (const cell of notebook.cells.slice(0, activeIndex).filter((c) => c.cellType === 'code')) {
+      await handleRunCell(cell.id);
+    }
+  };
+
+  const handleRunBelow = async () => {
+    const activeCellId = getActiveCellId();
+    if (!activeCellId) return;
+    const notebook = getNotebook();
+    const activeIndex = notebook.cells.findIndex((c) => c.id === activeCellId);
+    if (activeIndex === -1) return;
+    for (const cell of notebook.cells.slice(activeIndex).filter((c) => c.cellType === 'code')) {
+      await handleRunCell(cell.id);
+    }
+  };
+
+  return { handleRunAllCells, handleRunAbove, handleRunBelow };
+}
+
+// ============================================================================
+// Package Install Logic
+// ============================================================================
+
+async function handleInstallPackagesLogic(
+  packages: string[],
+  action: InstallAction,
+  getNotebook: () => NotebookState,
+  packageInstallModal: PackageInstallModalState,
+  setNotebook: React.Dispatch<React.SetStateAction<NotebookState>>,
+  setPackageInstallModal: React.Dispatch<React.SetStateAction<PackageInstallModalState>>,
+  setIsInstallingPackages: (installing: boolean) => void,
+  setPackageInstallError: (error: string | null) => void
+): Promise<void> {
+  setIsInstallingPackages(true);
+  setPackageInstallError(null);
+
+  try {
+    const pipCommand = generatePipInstallCommand(packages, action !== 'once');
+    const notebook = getNotebook();
+
+    if (action === 'once') {
+      const result = await window.promptbook.kernel.execute(`!${pipCommand.replace('!', '')}`);
+      if (!result.success) {
+        setPackageInstallError(result.error || 'Failed to install packages');
+        return;
+      }
+    } else if (action === 'current-cell') {
+      const cell = notebook.cells.find(c => c.id === packageInstallModal.cellId);
+      if (cell) {
+        const newCode = `${pipCommand}\n\n${cell.code || ''}`;
+        setNotebook(prev => ({
+          ...prev,
+          cells: prev.cells.map(c => c.id === packageInstallModal.cellId ? { ...c, code: newCode } : c),
+        }));
+      }
+    } else if (action === 'setup-cell') {
+      handleSetupCellInstall(pipCommand, notebook, setNotebook);
+    }
+
+    setPackageInstallModal({ isOpen: false, packages: [], cellId: '' });
+  } catch (error) {
+    setPackageInstallError(String(error));
+  } finally {
+    setIsInstallingPackages(false);
+  }
+}
+
+function handleSetupCellInstall(
+  pipCommand: string,
+  notebook: NotebookState,
+  setNotebook: React.Dispatch<React.SetStateAction<NotebookState>>
+): void {
+  const cellWithManyPips = notebook.cells.find(c => c.cellType === 'code' && countPipInstalls(c.code || '') >= 2);
+
+  if (cellWithManyPips) {
+    setNotebook(prev => ({
+      ...prev,
+      cells: prev.cells.map(c => c.id === cellWithManyPips.id ? { ...c, code: `${cellWithManyPips.code}\n${pipCommand}` } : c),
+    }));
+  } else {
+    const firstCell = notebook.cells[0];
+    if (firstCell?.cellType === 'code' && countPipInstalls(firstCell.code || '') > 0) {
+      setNotebook(prev => ({
+        ...prev,
+        cells: prev.cells.map((c, i) => i === 0 ? { ...c, code: `${firstCell.code}\n${pipCommand}` } : c),
+      }));
+    } else {
+      const setupCell = createCodeCell(`cell-setup-${Date.now()}`);
+      setupCell.shortDescription = 'Install required packages';
+      setupCell.code = `# Setup - Install required packages\n${pipCommand}`;
+      setNotebook(prev => ({ ...prev, cells: [setupCell, ...prev.cells] }));
+    }
+  }
+}
+
+// ============================================================================
+// File Load Effect
+// ============================================================================
+
+function useFileLoadEffect(
+  projectId: string | undefined,
+  initialFilePath: string | null,
+  currentFileRef: React.MutableRefObject<string | null>,
+  setNotebook: React.Dispatch<React.SetStateAction<NotebookState>>,
+  setFilePath: (path: string | null) => void
+) {
+  useEffect(() => {
+    if (projectId && initialFilePath && initialFilePath !== currentFileRef.current) {
+      currentFileRef.current = initialFilePath;
+      window.promptbook.project.readFile(projectId, initialFilePath).then((result) => {
+        if (result.success && result.content) {
+          try {
+            setNotebook(JSON.parse(result.content));
+            setFilePath(initialFilePath);
+          } catch {
+            setFilePath(initialFilePath);
+          }
+        }
+      });
+    }
+  }, [projectId, initialFilePath, currentFileRef, setNotebook, setFilePath]);
+}
+
+// ============================================================================
+// Utility Handlers
+// ============================================================================
+
+async function listFilesHelper(dirPath?: string) {
+  const result = await window.promptbook.file.listDir(dirPath);
+  if (result.success) {
+    return {
+      files: result.files.map((f) => ({ name: f.name, path: f.path, isDirectory: f.isDirectory })),
+      cwd: result.cwd,
+    };
+  }
+  return { files: [], cwd: '' };
+}
+
+// ============================================================================
+// Main Hook
+// ============================================================================
+
 export function useNotebook(
   initialFilePath: string | null,
   projectId: string | undefined,
@@ -64,315 +344,67 @@ export function useNotebook(
   const [activeCellId, setActiveCellId] = useState<string | null>(null);
   const [copiedCell, setCopiedCell] = useState<CellState | null>(null);
   const [commandMode, setCommandMode] = useState(true);
-  const [packageInstallModal, setPackageInstallModal] = useState<PackageInstallModalState>({
-    isOpen: false,
-    packages: [],
-    cellId: '',
-  });
+  const [packageInstallModal, setPackageInstallModal] = useState<PackageInstallModalState>({ isOpen: false, packages: [], cellId: '' });
   const [isInstallingPackages, setIsInstallingPackages] = useState(false);
   const [packageInstallError, setPackageInstallError] = useState<string | null>(null);
 
-  // Track current file path to avoid re-loading the same file
+  const notebookRef = useRef(notebook);
+  const activeCellIdRef = useRef(activeCellId);
+  const copiedCellRef = useRef(copiedCell);
   const currentFileRef = useRef<string | null>(initialFilePath);
 
-  // Load file when filePath prop changes (project mode)
-  useEffect(() => {
-    if (projectId && initialFilePath && initialFilePath !== currentFileRef.current) {
-      currentFileRef.current = initialFilePath;
-      window.promptbook.project.readFile(projectId, initialFilePath).then((result) => {
-        if (result.success && result.content) {
-          try {
-            const parsed = JSON.parse(result.content);
-            setNotebook(parsed);
-            setFilePath(initialFilePath);
-          } catch {
-            setFilePath(initialFilePath);
-          }
-        }
-      });
-    }
-  }, [projectId, initialFilePath]);
+  useEffect(() => { notebookRef.current = notebook; }, [notebook]);
+  useEffect(() => { activeCellIdRef.current = activeCellId; }, [activeCellId]);
+  useEffect(() => { copiedCellRef.current = copiedCell; }, [copiedCell]);
 
-  // Set initial active cell when notebook loads
-  useEffect(() => {
-    if (notebook.cells.length > 0 && !activeCellId) {
-      setActiveCellId(notebook.cells[0].id);
-    }
-  }, [notebook.cells, activeCellId]);
+  const getNotebook = useCallback(() => notebookRef.current, []);
+  const getActiveCellId = useCallback(() => activeCellIdRef.current, []);
+  const getCopiedCell = useCallback(() => copiedCellRef.current, []);
 
-  const handleUpdate = useCallback(
-    (cellId: string, updates: Partial<CellState>) => {
-      setNotebook((prev) => ({
-        ...prev,
-        cells: prev.cells.map((cell) =>
-          cell.id === cellId ? { ...cell, ...updates } : cell
-        ),
-        metadata: { ...prev.metadata, modified: new Date().toISOString() },
-      }));
-    },
-    []
-  );
+  useFileLoadEffect(projectId, initialFilePath, currentFileRef, setNotebook, setFilePath);
+  useEffect(() => { if (notebook.cells.length > 0 && !activeCellId) setActiveCellId(notebook.cells[0].id); }, [notebook.cells, activeCellId]);
 
-  // Use cell execution hook
-  const { handleRunCell, handleSyncCell } = useCellExecution({
-    notebook,
-    handleUpdate,
-    handleSaveVersion,
-    onError,
-    setEnvironmentPickerOpen,
-    setPackageInstallModal,
-    setPackageInstallError,
-  });
-
-  const handleAddCell = useCallback((afterCellId?: string, cellType: CellType = 'code') => {
-    const newCell = cellType === 'text'
-      ? createTextCell(`cell-${Date.now()}`)
-      : createCodeCell(`cell-${Date.now()}`);
-    // Set default tab for code cells
-    if (cellType === 'code') {
-      newCell.lastEditedTab = defaultTab;
-    }
-    setNotebook((prev) => {
-      if (!afterCellId) {
-        return { ...prev, cells: [...prev.cells, newCell] };
-      }
-      const index = prev.cells.findIndex((c) => c.id === afterCellId);
-      const newCells = [...prev.cells];
-      newCells.splice(index + 1, 0, newCell);
-      return { ...prev, cells: newCells };
-    });
-  }, [defaultTab]);
-
-  const handleAddCellAbove = useCallback((cellType: CellType = 'code') => {
-    const newCell = cellType === 'text'
-      ? createTextCell(`cell-${Date.now()}`)
-      : createCodeCell(`cell-${Date.now()}`);
-    // Set default tab for code cells
-    if (cellType === 'code') {
-      newCell.lastEditedTab = defaultTab;
-    }
-    setNotebook((prev) => {
-      if (!activeCellId) {
-        return { ...prev, cells: [newCell, ...prev.cells] };
-      }
-      const index = prev.cells.findIndex((c) => c.id === activeCellId);
-      const newCells = [...prev.cells];
-      newCells.splice(index, 0, newCell);
-      return { ...prev, cells: newCells };
-    });
-    setActiveCellId(newCell.id);
-  }, [activeCellId, defaultTab]);
-
-  const handleMoveCell = useCallback((cellId: string, direction: 'up' | 'down') => {
-    setNotebook((prev) => {
-      const index = prev.cells.findIndex((c) => c.id === cellId);
-      if (index === -1) return prev;
-
-      const newIndex = direction === 'up' ? index - 1 : index + 1;
-      if (newIndex < 0 || newIndex >= prev.cells.length) return prev;
-
-      const newCells = [...prev.cells];
-      const [movedCell] = newCells.splice(index, 1);
-      newCells.splice(newIndex, 0, movedCell);
-
-      return { ...prev, cells: newCells };
-    });
-  }, []);
-
-  const handleDeleteCell = useCallback((cellId: string) => {
+  const handleUpdate = useCallback((cellId: string, updates: Partial<CellState>) => {
     setNotebook((prev) => ({
       ...prev,
-      cells: prev.cells.filter((c) => c.id !== cellId),
+      cells: prev.cells.map((cell) => cell.id === cellId ? { ...cell, ...updates } : cell),
+      metadata: { ...prev.metadata, modified: new Date().toISOString() },
     }));
   }, []);
 
-  const handleCopyCell = useCallback(() => {
-    if (!activeCellId) return;
-    const cell = notebook.cells.find((c) => c.id === activeCellId);
-    if (cell) {
-      setCopiedCell({ ...cell });
-    }
-  }, [activeCellId, notebook.cells]);
+  const { handleRunCell, handleSyncCell } = useCellExecution({
+    notebook, handleUpdate, handleSaveVersion, onError, setEnvironmentPickerOpen, setPackageInstallModal, setPackageInstallError,
+  });
 
-  const handleCutCell = useCallback(() => {
-    if (!activeCellId) return;
-    handleCopyCell();
-    handleDeleteCell(activeCellId);
-    const index = notebook.cells.findIndex((c) => c.id === activeCellId);
-    if (index < notebook.cells.length - 1) {
-      setActiveCellId(notebook.cells[index + 1].id);
-    } else if (index > 0) {
-      setActiveCellId(notebook.cells[index - 1].id);
-    }
-  }, [activeCellId, handleCopyCell, handleDeleteCell, notebook.cells]);
-
-  const handlePasteCell = useCallback(() => {
-    if (!copiedCell) return;
-    const newCell = { ...copiedCell, id: `cell-${Date.now()}` };
-    setNotebook((prev) => {
-      if (!activeCellId) {
-        return { ...prev, cells: [...prev.cells, newCell] };
-      }
-      const index = prev.cells.findIndex((c) => c.id === activeCellId);
-      const newCells = [...prev.cells];
-      newCells.splice(index + 1, 0, newCell);
-      return { ...prev, cells: newCells };
-    });
-    setActiveCellId(newCell.id);
-  }, [copiedCell, activeCellId]);
-
-  const handleRunAllCells = useCallback(async () => {
-    const codeCells = notebook.cells.filter((c) => c.cellType === 'code');
-    for (const cell of codeCells) {
-      await handleRunCell(cell.id);
-    }
-  }, [notebook.cells, handleRunCell]);
-
-  const handleRunAbove = useCallback(async () => {
-    if (!activeCellId) return;
-    const activeIndex = notebook.cells.findIndex((c) => c.id === activeCellId);
-    if (activeIndex <= 0) return;
-    const cellsAbove = notebook.cells.slice(0, activeIndex).filter((c) => c.cellType === 'code');
-    for (const cell of cellsAbove) {
-      await handleRunCell(cell.id);
-    }
-  }, [notebook.cells, activeCellId, handleRunCell]);
-
-  const handleRunBelow = useCallback(async () => {
-    if (!activeCellId) return;
-    const activeIndex = notebook.cells.findIndex((c) => c.id === activeCellId);
-    if (activeIndex === -1) return;
-    const cellsBelow = notebook.cells.slice(activeIndex).filter((c) => c.cellType === 'code');
-    for (const cell of cellsBelow) {
-      await handleRunCell(cell.id);
-    }
-  }, [notebook.cells, activeCellId, handleRunCell]);
-
+  const cellOps = createCellOperations({ setNotebook, defaultTab, getActiveCellId, setActiveCellId });
+  const copyPasteOps = createCopyPasteOperations({
+    getNotebook, getActiveCellId, setNotebook, setActiveCellId, setCopiedCell, getCopiedCell, handleDeleteCell: cellOps.handleDeleteCell,
+  });
+  const runOps = createRunOperations(getNotebook, getActiveCellId, handleRunCell);
   const handleClearAllOutputs = useCallback(() => {
     setNotebook((prev) => ({
       ...prev,
       cells: prev.cells.map((cell) => ({
-        ...cell,
-        outputs: [],
-        lastExecutionTime: undefined,
-        lastExecutionSuccess: undefined,
+        ...cell, outputs: [], lastExecutionTime: undefined, lastExecutionSuccess: undefined,
       })),
     }));
   }, []);
-
-  const handleInstallPackages = useCallback(async (packages: string[], action: InstallAction) => {
-    setIsInstallingPackages(true);
-    setPackageInstallError(null);
-
-    try {
-      const pipCommand = generatePipInstallCommand(packages, action !== 'once');
-
-      if (action === 'once') {
-        const result = await window.promptbook.kernel.execute(`!${pipCommand.replace('!', '')}`);
-        if (!result.success) {
-          setPackageInstallError(result.error || 'Failed to install packages');
-          return;
-        }
-      } else if (action === 'current-cell') {
-        const cell = notebook.cells.find(c => c.id === packageInstallModal.cellId);
-        if (cell) {
-          const newCode = `${pipCommand}\n\n${cell.code || ''}`;
-          setNotebook(prev => ({
-            ...prev,
-            cells: prev.cells.map(c =>
-              c.id === packageInstallModal.cellId ? { ...c, code: newCode } : c
-            ),
-          }));
-        }
-      } else if (action === 'setup-cell') {
-        const cellWithManyPips = notebook.cells.find(
-          c => c.cellType === 'code' && countPipInstalls(c.code || '') >= 2
-        );
-
-        if (cellWithManyPips) {
-          const newCode = `${cellWithManyPips.code}\n${pipCommand}`;
-          setNotebook(prev => ({
-            ...prev,
-            cells: prev.cells.map(c =>
-              c.id === cellWithManyPips.id ? { ...c, code: newCode } : c
-            ),
-          }));
-        } else {
-          const firstCell = notebook.cells[0];
-          if (firstCell?.cellType === 'code' && countPipInstalls(firstCell.code || '') > 0) {
-            const newCode = `${firstCell.code}\n${pipCommand}`;
-            setNotebook(prev => ({
-              ...prev,
-              cells: prev.cells.map((c, i) =>
-                i === 0 ? { ...c, code: newCode } : c
-              ),
-            }));
-          } else {
-            const setupCell = createCodeCell(`cell-setup-${Date.now()}`);
-            setupCell.shortDescription = 'Install required packages';
-            setupCell.code = `# Setup - Install required packages\n${pipCommand}`;
-            setNotebook(prev => ({
-              ...prev,
-              cells: [setupCell, ...prev.cells],
-            }));
-          }
-        }
-      }
-
-      setPackageInstallModal({ isOpen: false, packages: [], cellId: '' });
-    } catch (error) {
-      setPackageInstallError(String(error));
-    } finally {
-      setIsInstallingPackages(false);
-    }
-  }, [notebook.cells, packageInstallModal.cellId]);
-
-  const listFiles = useCallback(async (dirPath?: string) => {
-    const result = await window.promptbook.file.listDir(dirPath);
-    if (result.success) {
-      return {
-        files: result.files.map((f) => ({
-          name: f.name,
-          path: f.path,
-          isDirectory: f.isDirectory,
-        })),
-        cwd: result.cwd,
-      };
-    }
-    return { files: [], cwd: '' };
-  }, []);
+  const handleInstallPackages = useCallback(
+    (packages: string[], action: InstallAction) => handleInstallPackagesLogic(
+      packages, action, getNotebook, packageInstallModal, setNotebook, setPackageInstallModal, setIsInstallingPackages, setPackageInstallError
+    ),
+    [getNotebook, packageInstallModal]
+  );
+  const listFiles = useCallback(listFilesHelper, []);
 
   return {
-    notebook,
-    setNotebook,
-    filePath,
-    setFilePath,
-    activeCellId,
-    setActiveCellId,
-    copiedCell,
-    commandMode,
-    setCommandMode,
-    packageInstallModal,
-    setPackageInstallModal,
-    isInstallingPackages,
-    packageInstallError,
-    setPackageInstallError,
-    handleUpdate,
-    handleAddCell,
-    handleAddCellAbove,
-    handleMoveCell,
-    handleDeleteCell,
-    handleCopyCell,
-    handleCutCell,
-    handlePasteCell,
-    handleRunCell,
-    handleRunAllCells,
-    handleRunAbove,
-    handleRunBelow,
-    handleSyncCell,
-    handleClearAllOutputs,
-    handleInstallPackages,
-    listFiles,
+    notebook, setNotebook, filePath, setFilePath, activeCellId, setActiveCellId, copiedCell, commandMode, setCommandMode,
+    packageInstallModal, setPackageInstallModal, isInstallingPackages, packageInstallError, setPackageInstallError, handleUpdate,
+    handleAddCell: cellOps.handleAddCell, handleAddCellAbove: cellOps.handleAddCellAbove,
+    handleMoveCell: cellOps.handleMoveCell, handleDeleteCell: cellOps.handleDeleteCell,
+    handleCopyCell: copyPasteOps.handleCopyCell, handleCutCell: copyPasteOps.handleCutCell, handlePasteCell: copyPasteOps.handlePasteCell,
+    handleRunCell, handleRunAllCells: runOps.handleRunAllCells, handleRunAbove: runOps.handleRunAbove, handleRunBelow: runOps.handleRunBelow,
+    handleSyncCell, handleClearAllOutputs, handleInstallPackages, listFiles,
   };
 }
 

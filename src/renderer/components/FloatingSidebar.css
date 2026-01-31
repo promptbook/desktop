@@ -3,9 +3,16 @@
   position: fixed;
   top: 40px; /* Below tab bar */
   left: 0;
-  width: 20px;
-  height: 100px;
+  width: 12px;
+  bottom: 0;
   z-index: 999;
+  /* Visual hint on hover */
+  transition: background 0.15s ease;
+}
+
+.sidebar-trigger:hover {
+  background: linear-gradient(to right, var(--color-accent, #6366f1) 0%, transparent 100%);
+  opacity: 0.5;
 }
 
 /* Floating Sidebar */

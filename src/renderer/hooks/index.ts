@@ -14,3 +14,18 @@ export { useFindReplace } from './useFindReplace';
 export type { UseFindReplaceReturn } from './useFindReplace';
 
 export { useKeyboardShortcuts } from './useKeyboardShortcuts';
+
+export { useFloatingSidebar } from './useFloatingSidebar';
+export type { FloatingSidebarState, FloatingSidebarHandlers, FloatingSidebarConfig } from './useFloatingSidebar';
+
+export { useTheme } from './useTheme';
+export type { UseThemeReturn } from './useTheme';
+
+export { useFileOperations } from './useFileOperations';
+export type { UseFileOperationsReturn } from './useFileOperations';
+
+export { useVersionControl } from './useVersionControl';
+export type { UseVersionControlReturn } from './useVersionControl';
+
+export { useSettings } from './useSettings';
+export type { UseSettingsReturn } from './useSettings';

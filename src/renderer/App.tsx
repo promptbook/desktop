@@ -1,7 +1,6 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Notebook,
-  NotebookState,
   KernelStatus,
   EnvironmentPicker,
   VariableInspector,
@@ -9,8 +8,9 @@ import {
   FindReplace,
   PackageInstallModal,
   KernelSymbol,
+  PythonEnvironment,
 } from '@promptbook/core/ui';
-import { Settings, AppSettings, defaultSettings, ThemePreference } from './Settings';
+import { Settings, AppSettings } from './Settings';
 import { Icons } from './icons';
 import './types'; // Import global type declarations
 
@@ -20,6 +20,10 @@ import {
   useAutoSave,
   useFindReplace,
   useKeyboardShortcuts,
+  useTheme,
+  useFileOperations,
+  useVersionControl,
+  useSettings,
 } from './hooks';
 
 // Props for integration with project management (Electron only)
@@ -29,314 +33,260 @@ interface AppProps {
   onOpenSettings?: () => void;
 }
 
-export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onOpenSettings }: AppProps = {}) {
-  const [settings, setSettings] = useState<AppSettings>(defaultSettings);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [globalError, setGlobalError] = useState<string | null>(null);
-  const [variableInspectorOpen, setVariableInspectorOpen] = useState(false);
-  const [canUndo, setCanUndo] = useState(false);
-  const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
-    window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false
-  );
+// Props for AppHeader component
+interface AppHeaderProps {
+  fileName: string | null;
+  hasUnsavedChanges: boolean;
+  themeClass: string;
+  kernelState: string;
+  selectedEnvironment: PythonEnvironment | null;
+  canUndo: boolean;
+  variableInspectorOpen: boolean;
+  onEnvironmentClick: () => void;
+  onInterrupt: () => void;
+  onRestart: () => void;
+  onRunAll: () => void;
+  onRunAbove: () => void;
+  onRunBelow: () => void;
+  onClearAllOutputs: () => void;
+  onExportPython: () => void;
+  onUndo: () => void;
+  onOpen: () => void;
+  onSave: () => void;
+  onVariableInspectorToggle: () => void;
+  onThemeToggle: () => void;
+  onSettingsOpen: () => void;
+  getThemeIcon: () => React.ReactNode;
+  getThemeLabel: () => string;
+}
 
-  // Listen for system theme changes
-  useEffect(() => {
-    const mediaQuery = window.matchMedia?.('(prefers-color-scheme: dark)');
-    if (!mediaQuery) return;
-
-    const handler = (e: MediaQueryListEvent) => setSystemPrefersDark(e.matches);
-    mediaQuery.addEventListener('change', handler);
-    return () => mediaQuery.removeEventListener('change', handler);
-  }, []);
-
-  // Compute effective theme class
-  const themeClass = useMemo(() => {
-    const theme = settings.theme || 'system';
-    if (theme === 'system') {
-      return systemPrefersDark ? 'theme-dark' : 'theme-light';
-    }
-    return `theme-${theme}`;
-  }, [settings.theme, systemPrefersDark]);
-
-  // Quick theme toggle (cycles: system -> light -> dark -> system)
-  const handleThemeToggle = useCallback(() => {
-    const currentTheme = settings.theme || 'system';
-    const nextTheme: ThemePreference =
-      currentTheme === 'system' ? 'light' :
-      currentTheme === 'light' ? 'dark' : 'system';
-    const newSettings = { ...settings, theme: nextTheme };
-    setSettings(newSettings);
-    window.promptbook.settings.save(newSettings);
-  }, [settings]);
-
-  // Get theme icon for current state
-  const getThemeIcon = () => {
-    const theme = settings.theme || 'system';
-    if (theme === 'system') return Icons.system;
-    if (theme === 'light') return Icons.sun;
-    return Icons.moon;
-  };
-
-  const getThemeLabel = () => {
-    const theme = settings.theme || 'system';
-    if (theme === 'system') return 'System';
-    if (theme === 'light') return 'Light';
-    return 'Dark';
-  };
-
-  // Kernel hook
-  const kernel = useKernel((error) => setGlobalError(error));
-
-  // Version control
-  const handleSaveVersion = useCallback(async (message: string) => {
-    const content = JSON.stringify(notebookHook.notebook, null, 2);
-    await window.promptbook.version.save(notebookId, content, message);
-    const canUndoResult = await window.promptbook.version.canUndo(notebookId);
-    setCanUndo(canUndoResult.canUndo);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Notebook hook
-  const notebookHook = useNotebook(
-    initialFilePath || null,
-    projectId,
-    (error) => setGlobalError(error),
-    kernel.setEnvironmentPickerOpen,
-    handleSaveVersion,
-    settings.editor?.defaultTab || 'short'
-  );
-
-  // Auto-save hook
-  const autoSave = useAutoSave(notebookHook.notebook, notebookHook.filePath, projectId);
-
-  // Find & Replace hook
-  const findReplace = useFindReplace(notebookHook.notebook, notebookHook.setNotebook);
-
-  // Compute notebookId for version control
-  const notebookId = notebookHook.filePath
-    ? notebookHook.filePath.replace(/[^a-zA-Z0-9]/g, '_')
-    : `untitled_${Date.now()}`;
-
-  // Load settings on mount
-  React.useEffect(() => {
-    window.promptbook.settings.load().then(setSettings);
-  }, []);
-
-  const handleSaveSettings = async (newSettings: AppSettings) => {
-    await window.promptbook.settings.save(newSettings);
-    setSettings(newSettings);
-  };
-
-  const handleOpen = async () => {
-    const path = await window.promptbook.file.open();
-    if (path) {
-      try {
-        const loadedNotebook = await window.promptbook.file.read(path);
-        notebookHook.setNotebook(loadedNotebook);
-        notebookHook.setFilePath(path);
-      } catch (error) {
-        console.error('Failed to load notebook:', error);
-      }
-    }
-  };
-
-  const handleSave = async () => {
-    if (notebookHook.filePath) {
-      await window.promptbook.file.save(notebookHook.filePath, notebookHook.notebook);
-      autoSave.setHasUnsavedChanges(false);
-      autoSave.setLastSavedAt(new Date());
-    } else {
-      const result = await window.promptbook.file.saveAs(notebookHook.notebook);
-      if (result.success && result.filePath) {
-        notebookHook.setFilePath(result.filePath);
-        autoSave.setHasUnsavedChanges(false);
-        autoSave.setLastSavedAt(new Date());
-      }
-    }
-  };
-
-  const handleExportPython = async () => {
-    const result = await window.promptbook.file.exportPython(notebookHook.notebook);
-    if (result.success && result.filePath) {
-      setGlobalError(null);
-    }
-  };
-
-  // Undo to previous version
-  const handleUndo = useCallback(async () => {
-    const result = await window.promptbook.version.undo(notebookId);
-    if (result.success && result.content) {
-      try {
-        const restored = JSON.parse(result.content) as NotebookState;
-        notebookHook.setNotebook(restored);
-        const canUndoResult = await window.promptbook.version.canUndo(notebookId);
-        setCanUndo(canUndoResult.canUndo);
-      } catch {
-        setGlobalError('Failed to restore version');
-      }
-    }
-  }, [notebookId, notebookHook]);
-
-  // Refresh variables for inspector
-  const handleRefreshVariables = useCallback(async (): Promise<Variable[]> => {
-    const result = await window.promptbook.kernel.getVariables();
-    return result.success ? result.variables : [];
-  }, []);
-
-  // Get kernel symbols for # autocomplete
-  const handleGetSymbols = useCallback(async (): Promise<KernelSymbol[]> => {
-    const result = await window.promptbook.kernel.getSymbols();
-    return result.success ? result.symbols : [];
-  }, []);
-
-  // Keyboard shortcuts
-  useKeyboardShortcuts({
-    notebook: notebookHook.notebook,
-    activeCellId: notebookHook.activeCellId,
-    commandMode: notebookHook.commandMode,
-    canUndo,
-    setCommandMode: notebookHook.setCommandMode,
-    setActiveCellId: notebookHook.setActiveCellId,
-    setVariableInspectorOpen,
-    setFindReplaceOpen: findReplace.setFindReplaceOpen,
-    handleRunCell: notebookHook.handleRunCell,
-    handleRunAllCells: notebookHook.handleRunAllCells,
-    handleAddCell: notebookHook.handleAddCell,
-    handleAddCellAbove: notebookHook.handleAddCellAbove,
-    handleDeleteCell: notebookHook.handleDeleteCell,
-    handleCopyCell: notebookHook.handleCopyCell,
-    handleCutCell: notebookHook.handleCutCell,
-    handlePasteCell: notebookHook.handlePasteCell,
-    handleUpdate: notebookHook.handleUpdate,
-    handleUndo,
-    handleSave,
-    handleOpen,
-  });
-
-  const fileName = notebookHook.filePath ? notebookHook.filePath.split('/').pop() : null;
-
+// AppHeader component - extracted from App
+function AppHeader({
+  fileName,
+  hasUnsavedChanges,
+  kernelState,
+  selectedEnvironment,
+  canUndo,
+  variableInspectorOpen,
+  onEnvironmentClick,
+  onInterrupt,
+  onRestart,
+  onRunAll,
+  onRunAbove,
+  onRunBelow,
+  onClearAllOutputs,
+  onExportPython,
+  onUndo,
+  onOpen,
+  onSave,
+  onVariableInspectorToggle,
+  onThemeToggle,
+  onSettingsOpen,
+  getThemeIcon,
+  getThemeLabel,
+}: AppHeaderProps) {
   return (
-    <div className={`app ${themeClass} ${variableInspectorOpen ? 'app--inspector-open' : ''}`}>
-      <header className="app-header">
-        <div className="app-brand">
-          <span className="app-logo">{Icons.logo}</span>
-          <h1>Promptbook</h1>
-          {fileName && (
-            <span className="app-filename">
-              {fileName}
-              {autoSave.hasUnsavedChanges && <span className="app-filename__unsaved" title="Unsaved changes">●</span>}
-            </span>
-          )}
-        </div>
-        <div className="app-actions">
-          <KernelStatus
-            status={kernel.kernelState}
-            environment={kernel.selectedEnvironment}
-            onClick={() => kernel.setEnvironmentPickerOpen(true)}
-            onInterrupt={kernel.handleInterrupt}
-            onRestart={kernel.handleRestart}
-          />
-          <div className="toolbar-group">
-            <button onClick={notebookHook.handleRunAllCells} title="Run All Cells (⇧⌘↵)" className="toolbar-btn toolbar-btn--primary">
-              {Icons.runAll}
-              <span>Run All</span>
+    <header className="app-header">
+      <div className="app-brand">
+        <span className="app-logo">{Icons.logo}</span>
+        <h1>Promptbook</h1>
+        {fileName && (
+          <span className="app-filename">
+            {fileName}
+            {hasUnsavedChanges && <span className="app-filename__unsaved" title="Unsaved changes">●</span>}
+          </span>
+        )}
+      </div>
+      <div className="app-actions">
+        <KernelStatus
+          status={kernelState}
+          environment={selectedEnvironment}
+          onClick={onEnvironmentClick}
+          onInterrupt={onInterrupt}
+          onRestart={onRestart}
+        />
+        <div className="toolbar-group">
+          <button onClick={onRunAll} title="Run All Cells (⇧⌘↵)" className="toolbar-btn toolbar-btn--primary">
+            {Icons.runAll}
+            <span>Run All</span>
+          </button>
+          <div className="toolbar-dropdown">
+            <button className="toolbar-dropdown-trigger" title="More run options">
+              {Icons.chevronDown}
             </button>
-            <div className="toolbar-dropdown">
-              <button className="toolbar-dropdown-trigger" title="More run options">
-                {Icons.chevronDown}
-              </button>
-              <div className="toolbar-dropdown-menu">
-                <button onClick={notebookHook.handleRunAbove}>Run Above</button>
-                <button onClick={notebookHook.handleRunBelow}>Run Below</button>
-                <hr />
-                <button onClick={notebookHook.handleClearAllOutputs}>Clear All Outputs</button>
-                <hr />
-                <button onClick={handleExportPython}>Export to Python</button>
-              </div>
+            <div className="toolbar-dropdown-menu">
+              <button onClick={onRunAbove}>Run Above</button>
+              <button onClick={onRunBelow}>Run Below</button>
+              <hr />
+              <button onClick={onClearAllOutputs}>Clear All Outputs</button>
+              <hr />
+              <button onClick={onExportPython}>Export to Python</button>
             </div>
           </div>
-          <button onClick={handleUndo} disabled={!canUndo} title="Undo (⌘Z)">
-            {Icons.undo}
-          </button>
-          <button onClick={handleOpen} title="Open file (⌘O)">
-            {Icons.folder}
-            <span>Open</span>
-          </button>
-          <button onClick={handleSave} title="Save file (⌘S)">
-            {Icons.save}
-            <span>Save</span>
-          </button>
-          <button
-            onClick={() => setVariableInspectorOpen(!variableInspectorOpen)}
-            title="Variables (⌥V)"
-            className={variableInspectorOpen ? 'toolbar-btn--active' : ''}
-          >
-            {Icons.variables}
-            <span>Variables</span>
-          </button>
-          <button
-            onClick={handleThemeToggle}
-            title={`Theme: ${getThemeLabel()} (click to change)`}
-            className="toolbar-btn--theme"
-          >
-            {getThemeIcon()}
-          </button>
-          <button onClick={() => setSettingsOpen(true)} title="Settings">
-            {Icons.settings}
-          </button>
         </div>
-      </header>
-      <main className="app-main">
-        <Notebook
-          notebook={notebookHook.notebook}
-          onUpdate={notebookHook.handleUpdate}
-          onRunCell={notebookHook.handleRunCell}
-          onSyncCell={notebookHook.handleSyncCell}
-          onAddCell={notebookHook.handleAddCell}
-          onDeleteCell={notebookHook.handleDeleteCell}
-          onMoveCell={notebookHook.handleMoveCell}
-          activeCellId={notebookHook.activeCellId || undefined}
-          onCellFocus={notebookHook.setActiveCellId}
-          listFiles={notebookHook.listFiles}
-          getSymbols={handleGetSymbols}
-        />
-      </main>
+        <button onClick={onUndo} disabled={!canUndo} title="Undo (⌘Z)">
+          {Icons.undo}
+        </button>
+        <button onClick={onOpen} title="Open file (⌘O)">
+          {Icons.folder}
+          <span>Open</span>
+        </button>
+        <button onClick={onSave} title="Save file (⌘S)">
+          {Icons.save}
+          <span>Save</span>
+        </button>
+        <button
+          onClick={onVariableInspectorToggle}
+          title="Variables (⌥V)"
+          className={variableInspectorOpen ? 'toolbar-btn--active' : ''}
+        >
+          {Icons.variables}
+          <span>Variables</span>
+        </button>
+        <button
+          onClick={onThemeToggle}
+          title={`Theme: ${getThemeLabel()} (click to change)`}
+          className="toolbar-btn--theme"
+        >
+          {getThemeIcon()}
+        </button>
+        <button onClick={onSettingsOpen} title="Settings">
+          {Icons.settings}
+        </button>
+      </div>
+    </header>
+  );
+}
+
+// Props for AppModals component
+interface AppModalsProps {
+  settingsOpen: boolean;
+  onSettingsClose: () => void;
+  settings: AppSettings;
+  onSaveSettings: (settings: AppSettings) => Promise<void>;
+  environmentPickerOpen: boolean;
+  onEnvironmentPickerClose: () => void;
+  environments: PythonEnvironment[];
+  selectedEnvironment: PythonEnvironment | null;
+  onSelectEnvironment: (env: PythonEnvironment) => void;
+  onRefreshEnvironments: () => void;
+  onCreateVenv: (name: string, pythonPath?: string) => Promise<void>;
+  isInstallingIpykernel: boolean;
+  isCreatingVenv: boolean;
+  installError: string | null;
+  packageInstallModal: { isOpen: boolean; packages: string[]; cellId: string };
+  onPackageInstallClose: () => void;
+  onInstallPackages: (packages: string[]) => Promise<void>;
+  isInstallingPackages: boolean;
+  packageInstallError: string | null;
+  globalError: string | null;
+  onDismissError: () => void;
+  variableInspectorOpen: boolean;
+  onVariableInspectorClose: () => void;
+  onRefreshVariables: () => Promise<Variable[]>;
+  findReplaceOpen: boolean;
+  onFindReplaceClose: () => void;
+  onSearch: (query: string, options: { caseSensitive: boolean; regex: boolean }) => {
+    cellId: string;
+    matches: { start: number; end: number }[];
+  }[];
+  onReplace: (cellId: string, matchIndex: number, replacement: string) => void;
+  onReplaceAll: (replacement: string) => void;
+  onNavigate: (cellId: string) => void;
+}
+
+// Props for NotebookContent component
+interface NotebookContentProps {
+  notebookHook: ReturnType<typeof useNotebook>;
+  getSymbols: () => Promise<KernelSymbol[]>;
+}
+
+// NotebookContent component - main notebook area
+function NotebookContent({ notebookHook, getSymbols }: NotebookContentProps) {
+  return (
+    <main className="app-main">
+      <Notebook
+        notebook={notebookHook.notebook}
+        onUpdate={notebookHook.handleUpdate}
+        onRunCell={notebookHook.handleRunCell}
+        onSyncCell={notebookHook.handleSyncCell}
+        onAddCell={notebookHook.handleAddCell}
+        onDeleteCell={notebookHook.handleDeleteCell}
+        onMoveCell={notebookHook.handleMoveCell}
+        activeCellId={notebookHook.activeCellId || undefined}
+        onCellFocus={notebookHook.setActiveCellId}
+        listFiles={notebookHook.listFiles}
+        getSymbols={getSymbols}
+      />
+    </main>
+  );
+}
+
+// AppModals component - extracted from App
+function AppModals({
+  settingsOpen,
+  onSettingsClose,
+  settings,
+  onSaveSettings,
+  environmentPickerOpen,
+  onEnvironmentPickerClose,
+  environments,
+  selectedEnvironment,
+  onSelectEnvironment,
+  onRefreshEnvironments,
+  onCreateVenv,
+  isInstallingIpykernel,
+  isCreatingVenv,
+  installError,
+  packageInstallModal,
+  onPackageInstallClose,
+  onInstallPackages,
+  isInstallingPackages,
+  packageInstallError,
+  globalError,
+  onDismissError,
+  variableInspectorOpen,
+  onVariableInspectorClose,
+  onRefreshVariables,
+  findReplaceOpen,
+  onFindReplaceClose,
+  onSearch,
+  onReplace,
+  onReplaceAll,
+  onNavigate,
+}: AppModalsProps) {
+  return (
+    <>
       <Settings
         isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+        onClose={onSettingsClose}
         settings={settings}
-        onSave={handleSaveSettings}
+        onSave={onSaveSettings}
       />
       <EnvironmentPicker
-        isOpen={kernel.environmentPickerOpen}
-        onClose={() => {
-          kernel.setEnvironmentPickerOpen(false);
-          kernel.setInstallError(null);
-        }}
-        environments={kernel.environments}
-        selectedEnvironment={kernel.selectedEnvironment}
-        onSelect={kernel.handleSelectEnvironment}
-        onRefresh={kernel.handleRefreshEnvironments}
-        onCreateVenv={kernel.handleCreateVenv}
-        isInstalling={kernel.isInstallingIpykernel}
-        isCreatingVenv={kernel.isCreatingVenv}
-        installError={kernel.installError}
+        isOpen={environmentPickerOpen}
+        onClose={onEnvironmentPickerClose}
+        environments={environments}
+        selectedEnvironment={selectedEnvironment}
+        onSelect={onSelectEnvironment}
+        onRefresh={onRefreshEnvironments}
+        onCreateVenv={onCreateVenv}
+        isInstalling={isInstallingIpykernel}
+        isCreatingVenv={isCreatingVenv}
+        installError={installError}
       />
       <PackageInstallModal
-        isOpen={notebookHook.packageInstallModal.isOpen}
-        onClose={() => {
-          notebookHook.setPackageInstallModal({ isOpen: false, packages: [], cellId: '' });
-          notebookHook.setPackageInstallError(null);
-        }}
-        packages={notebookHook.packageInstallModal.packages}
-        onInstall={notebookHook.handleInstallPackages}
-        isInstalling={notebookHook.isInstallingPackages}
-        installError={notebookHook.packageInstallError}
+        isOpen={packageInstallModal.isOpen}
+        onClose={onPackageInstallClose}
+        packages={packageInstallModal.packages}
+        onInstall={onInstallPackages}
+        isInstalling={isInstallingPackages}
+        installError={packageInstallError}
       />
       {globalError && (
         <div className="error-toast">
           <span>{globalError}</span>
-          <button onClick={() => setGlobalError(null)} title="Dismiss">
+          <button onClick={onDismissError} title="Dismiss">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M3 3l8 8M11 3l-8 8" />
             </svg>
@@ -345,16 +295,115 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
       )}
       <VariableInspector
         isOpen={variableInspectorOpen}
-        onClose={() => setVariableInspectorOpen(false)}
-        onRefresh={handleRefreshVariables}
+        onClose={onVariableInspectorClose}
+        onRefresh={onRefreshVariables}
       />
       <FindReplace
-        isOpen={findReplace.findReplaceOpen}
-        onClose={() => findReplace.setFindReplaceOpen(false)}
-        onSearch={findReplace.handleSearch}
-        onReplace={findReplace.handleReplace}
-        onReplaceAll={findReplace.handleReplaceAll}
-        onNavigate={(cellId) => notebookHook.setActiveCellId(cellId)}
+        isOpen={findReplaceOpen}
+        onClose={onFindReplaceClose}
+        onSearch={onSearch}
+        onReplace={onReplace}
+        onReplaceAll={onReplaceAll}
+        onNavigate={onNavigate}
+      />
+    </>
+  );
+}
+
+export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onOpenSettings }: AppProps = {}) {
+  // Settings hook
+  const settingsHook = useSettings();
+  const [globalError, setGlobalError] = useState<string | null>(null);
+  const [variableInspectorOpen, setVariableInspectorOpen] = useState(false);
+
+  // Theme hook
+  const theme = useTheme(settingsHook.settings, settingsHook.setSettings);
+
+  // Kernel hook
+  const kernel = useKernel((error) => setGlobalError(error));
+
+  // Notebook hook
+  const notebookHook = useNotebook(
+    initialFilePath || null, projectId, (error) => setGlobalError(error),
+    kernel.setEnvironmentPickerOpen, async () => {}, settingsHook.settings.editor?.defaultTab || 'short'
+  );
+
+  // Version control, auto-save, file operations, find & replace hooks
+  const versionControl = useVersionControl(notebookHook, setGlobalError);
+  const autoSave = useAutoSave(notebookHook.notebook, notebookHook.filePath, projectId);
+  const fileOps = useFileOperations(notebookHook, autoSave, setGlobalError);
+  const findReplace = useFindReplace(notebookHook.notebook, notebookHook.setNotebook);
+
+  // Callbacks for kernel operations
+  const handleRefreshVariables = useCallback(async (): Promise<Variable[]> => {
+    const result = await window.promptbook.kernel.getVariables();
+    return result.success ? result.variables : [];
+  }, []);
+
+  const handleGetSymbols = useCallback(async (): Promise<KernelSymbol[]> => {
+    const result = await window.promptbook.kernel.getSymbols();
+    return result.success ? result.symbols : [];
+  }, []);
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    notebook: notebookHook.notebook, activeCellId: notebookHook.activeCellId, commandMode: notebookHook.commandMode,
+    canUndo: versionControl.canUndo, setCommandMode: notebookHook.setCommandMode, setActiveCellId: notebookHook.setActiveCellId,
+    setVariableInspectorOpen, setFindReplaceOpen: findReplace.setFindReplaceOpen,
+    handleRunCell: notebookHook.handleRunCell, handleRunAllCells: notebookHook.handleRunAllCells,
+    handleAddCell: notebookHook.handleAddCell, handleAddCellAbove: notebookHook.handleAddCellAbove,
+    handleDeleteCell: notebookHook.handleDeleteCell, handleCopyCell: notebookHook.handleCopyCell,
+    handleCutCell: notebookHook.handleCutCell, handlePasteCell: notebookHook.handlePasteCell,
+    handleUpdate: notebookHook.handleUpdate, handleUndo: versionControl.handleUndo,
+    handleSave: fileOps.handleSave, handleOpen: fileOps.handleOpen,
+  });
+
+  const fileName = notebookHook.filePath ? notebookHook.filePath.split('/').pop() || null : null;
+
+  // Modal close handlers
+  const handleEnvironmentPickerClose = useCallback(() => {
+    kernel.setEnvironmentPickerOpen(false);
+    kernel.setInstallError(null);
+  }, [kernel]);
+
+  const handlePackageInstallClose = useCallback(() => {
+    notebookHook.setPackageInstallModal({ isOpen: false, packages: [], cellId: '' });
+    notebookHook.setPackageInstallError(null);
+  }, [notebookHook]);
+
+  return (
+    <div className={`app ${theme.themeClass} ${variableInspectorOpen ? 'app--inspector-open' : ''}`}>
+      <AppHeader
+        fileName={fileName} hasUnsavedChanges={autoSave.hasUnsavedChanges} themeClass={theme.themeClass}
+        kernelState={kernel.kernelState} selectedEnvironment={kernel.selectedEnvironment}
+        canUndo={versionControl.canUndo} variableInspectorOpen={variableInspectorOpen}
+        onEnvironmentClick={() => kernel.setEnvironmentPickerOpen(true)}
+        onInterrupt={kernel.handleInterrupt} onRestart={kernel.handleRestart}
+        onRunAll={notebookHook.handleRunAllCells} onRunAbove={notebookHook.handleRunAbove}
+        onRunBelow={notebookHook.handleRunBelow} onClearAllOutputs={notebookHook.handleClearAllOutputs}
+        onExportPython={fileOps.handleExportPython} onUndo={versionControl.handleUndo}
+        onOpen={fileOps.handleOpen} onSave={fileOps.handleSave}
+        onVariableInspectorToggle={() => setVariableInspectorOpen(!variableInspectorOpen)}
+        onThemeToggle={theme.handleThemeToggle} onSettingsOpen={() => settingsHook.setSettingsOpen(true)}
+        getThemeIcon={theme.getThemeIcon} getThemeLabel={theme.getThemeLabel}
+      />
+      <NotebookContent notebookHook={notebookHook} getSymbols={handleGetSymbols} />
+      <AppModals
+        settingsOpen={settingsHook.settingsOpen} onSettingsClose={() => settingsHook.setSettingsOpen(false)}
+        settings={settingsHook.settings} onSaveSettings={settingsHook.handleSaveSettings}
+        environmentPickerOpen={kernel.environmentPickerOpen} onEnvironmentPickerClose={handleEnvironmentPickerClose}
+        environments={kernel.environments} selectedEnvironment={kernel.selectedEnvironment}
+        onSelectEnvironment={kernel.handleSelectEnvironment} onRefreshEnvironments={kernel.handleRefreshEnvironments}
+        onCreateVenv={kernel.handleCreateVenv} isInstallingIpykernel={kernel.isInstallingIpykernel}
+        isCreatingVenv={kernel.isCreatingVenv} installError={kernel.installError}
+        packageInstallModal={notebookHook.packageInstallModal} onPackageInstallClose={handlePackageInstallClose}
+        onInstallPackages={notebookHook.handleInstallPackages} isInstallingPackages={notebookHook.isInstallingPackages}
+        packageInstallError={notebookHook.packageInstallError} globalError={globalError}
+        onDismissError={() => setGlobalError(null)} variableInspectorOpen={variableInspectorOpen}
+        onVariableInspectorClose={() => setVariableInspectorOpen(false)} onRefreshVariables={handleRefreshVariables}
+        findReplaceOpen={findReplace.findReplaceOpen} onFindReplaceClose={() => findReplace.setFindReplaceOpen(false)}
+        onSearch={findReplace.handleSearch} onReplace={findReplace.handleReplace}
+        onReplaceAll={findReplace.handleReplaceAll} onNavigate={(cellId) => notebookHook.setActiveCellId(cellId)}
       />
     </div>
   );
