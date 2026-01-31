@@ -22,6 +22,24 @@ export interface ProjectSettings {
 
 const DEFAULT_PROJECTS_ROOT = path.join(os.homedir(), 'promptbook_projects');
 
+/**
+ * Validate and resolve a relative path to prevent path traversal attacks.
+ * Throws if the resolved path escapes the root directory.
+ */
+function validateRelativePath(rootDir: string, relativePath: string): string {
+  // Normalize and resolve the full path
+  const resolved = path.resolve(rootDir, relativePath);
+  // Ensure the resolved path starts with the root directory
+  const normalizedRoot = path.resolve(rootDir) + path.sep;
+  const normalizedResolved = path.resolve(resolved);
+
+  if (!normalizedResolved.startsWith(normalizedRoot) && normalizedResolved !== path.resolve(rootDir)) {
+    throw new Error(`Path traversal detected: ${relativePath}`);
+  }
+
+  return resolved;
+}
+
 const defaultProjectSettings: ProjectSettings = {
   projectsRootPath: DEFAULT_PROJECTS_ROOT,
   lastOpenedProjectId: null,
@@ -208,7 +226,7 @@ class ProjectService {
     const project = this.getProject(projectId);
     if (!project) throw new Error('Project not found');
 
-    const targetPath = path.join(project.path, relativePath);
+    const targetPath = validateRelativePath(project.path, relativePath);
     const entries = await fs.readdir(targetPath, { withFileTypes: true });
 
     const files: FileEntry[] = [];
@@ -236,7 +254,7 @@ class ProjectService {
     const project = this.getProject(projectId);
     if (!project) throw new Error('Project not found');
 
-    const filePath = path.join(project.path, relativePath);
+    const filePath = validateRelativePath(project.path, relativePath);
     const dir = path.dirname(filePath);
 
     await fs.mkdir(dir, { recursive: true });
@@ -247,7 +265,7 @@ class ProjectService {
     const project = this.getProject(projectId);
     if (!project) throw new Error('Project not found');
 
-    const folderPath = path.join(project.path, relativePath);
+    const folderPath = validateRelativePath(project.path, relativePath);
     await fs.mkdir(folderPath, { recursive: true });
   }
 
@@ -255,7 +273,7 @@ class ProjectService {
     const project = this.getProject(projectId);
     if (!project) throw new Error('Project not found');
 
-    const filePath = path.join(project.path, relativePath);
+    const filePath = validateRelativePath(project.path, relativePath);
     await fs.rm(filePath, { recursive: true, force: true });
   }
 
@@ -263,8 +281,8 @@ class ProjectService {
     const project = this.getProject(projectId);
     if (!project) throw new Error('Project not found');
 
-    const oldFilePath = path.join(project.path, oldPath);
-    const newFilePath = path.join(project.path, newPath);
+    const oldFilePath = validateRelativePath(project.path, oldPath);
+    const newFilePath = validateRelativePath(project.path, newPath);
 
     await fs.rename(oldFilePath, newFilePath);
   }
@@ -273,7 +291,7 @@ class ProjectService {
     const project = this.getProject(projectId);
     if (!project) throw new Error('Project not found');
 
-    const filePath = path.join(project.path, relativePath);
+    const filePath = validateRelativePath(project.path, relativePath);
     return await fs.readFile(filePath, 'utf-8');
   }
 
@@ -281,7 +299,7 @@ class ProjectService {
     const project = this.getProject(projectId);
     if (!project) throw new Error('Project not found');
 
-    const filePath = path.join(project.path, relativePath);
+    const filePath = validateRelativePath(project.path, relativePath);
     await fs.writeFile(filePath, content, 'utf-8');
   }
 

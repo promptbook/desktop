@@ -64,7 +64,8 @@ function parseCodeGenerationResult(response: string, isToCode: boolean): { code:
 
 async function aiSyncWithAgent(
   direction: string,
-  context: AiSyncContext
+  context: AiSyncContext,
+  settings: AiSettings
 ): Promise<AiSyncResult> {
   try {
     const { query } = await dynamicImport('@anthropic-ai/claude-agent-sdk');
@@ -72,6 +73,20 @@ async function aiSyncWithAgent(
     const prompt = buildSyncPrompt(direction, context);
 
     let rawResult = '';
+
+    // Build environment variables, respecting user settings
+    const env: Record<string, string> = {
+      ...process.env as Record<string, string>,
+    };
+
+    // Use Bedrock settings if configured
+    if (settings.bedrockRegion) {
+      env.CLAUDE_CODE_USE_BEDROCK = '1';
+      env.AWS_REGION = settings.bedrockRegion;
+    }
+    if (settings.bedrockProfile) {
+      env.AWS_PROFILE = settings.bedrockProfile;
+    }
 
     // Use the Claude Agent SDK query function
     for await (const message of query({
@@ -81,11 +96,7 @@ async function aiSyncWithAgent(
         permissionMode: 'bypassPermissions',
         maxTurns: 1,
         persistSession: false,
-        env: {
-          ...process.env,
-          CLAUDE_CODE_USE_BEDROCK: '1',
-          AWS_REGION: process.env.AWS_REGION || 'us-east-1',
-        },
+        env,
       },
     })) {
       if (message.type === 'result') {
@@ -111,10 +122,18 @@ async function aiSyncWithAgent(
 
 async function aiSyncWithClaude(
   direction: string,
-  context: AiSyncContext
+  context: AiSyncContext,
+  settings: AiSettings
 ): Promise<AiSyncResult> {
   const Anthropic = (await import('@anthropic-ai/sdk')).default;
-  const client = new Anthropic();
+
+  // Use API key from settings if provided, otherwise fall back to environment variable
+  const clientOptions: { apiKey?: string } = {};
+  if (settings.claudeApiKey) {
+    clientOptions.apiKey = settings.claudeApiKey;
+  }
+
+  const client = new Anthropic(clientOptions);
 
   const prompt = buildSyncPrompt(direction, context);
 
@@ -138,14 +157,15 @@ async function aiSyncWithClaude(
 export function registerAiHandlers(getCurrentSettings: () => { ai?: AiSettings }): void {
   ipcMain.handle('ai:sync', async (_event, _cellId: string, direction: string, context: AiSyncContext) => {
     try {
-      const provider = getCurrentSettings().ai?.provider || 'agent';
+      const aiSettings = getCurrentSettings().ai || { provider: 'agent' };
+      const provider = aiSettings.provider || 'agent';
 
       switch (provider) {
         case 'agent':
-          return await aiSyncWithAgent(direction, context);
+          return await aiSyncWithAgent(direction, context, aiSettings);
 
         case 'claude':
-          return await aiSyncWithClaude(direction, context);
+          return await aiSyncWithClaude(direction, context, aiSettings);
 
         case 'bedrock':
           return { success: false, error: 'Bedrock provider not yet implemented' };

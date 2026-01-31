@@ -1,7 +1,27 @@
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
+
+/**
+ * Validate notebookId to prevent path traversal and shell injection.
+ * Only allows alphanumeric characters, hyphens, and underscores.
+ */
+function validateNotebookId(notebookId: string): void {
+  if (!/^[a-zA-Z0-9_-]+$/.test(notebookId)) {
+    throw new Error(`Invalid notebook ID: ${notebookId}`);
+  }
+}
+
+/**
+ * Validate git hash to prevent injection.
+ * Git hashes are hexadecimal strings.
+ */
+function validateGitHash(hash: string): void {
+  if (!/^[a-fA-F0-9]+$/.test(hash)) {
+    throw new Error(`Invalid git hash: ${hash}`);
+  }
+}
 
 export interface VersionInfo {
   hash: string;
@@ -25,26 +45,26 @@ export class VersionManager {
 
     // Check if git repo exists, if not initialize it
     try {
-      await this.execGit('rev-parse --git-dir');
+      await this.execGit(['rev-parse', '--git-dir']);
     } catch {
-      await this.execGit('init');
-      await this.execGit('config user.email "promptbook@local"');
-      await this.execGit('config user.name "Promptbook"');
+      await this.execGit(['init']);
+      await this.execGit(['config', 'user.email', 'promptbook@local']);
+      await this.execGit(['config', 'user.name', 'Promptbook']);
       // Create initial commit
       await fs.writeFile(
         path.join(this.versionsDir, '.gitkeep'),
         'Promptbook version history\n'
       );
-      await this.execGit('add .');
-      await this.execGit('commit -m "Initial commit"');
+      await this.execGit(['add', '.']);
+      await this.execGit(['commit', '-m', 'Initial commit']);
     }
 
     this.initialized = true;
   }
 
-  private execGit(command: string): Promise<string> {
+  private execGit(args: string[]): Promise<string> {
     return new Promise((resolve, reject) => {
-      exec(`git ${command}`, { cwd: this.versionsDir }, (error, stdout, stderr) => {
+      execFile('git', args, { cwd: this.versionsDir }, (error, stdout, stderr) => {
         if (error) {
           reject(new Error(stderr || error.message));
         } else {
@@ -64,22 +84,25 @@ export class VersionManager {
   ): Promise<string> {
     await this.init();
 
+    // Validate inputs to prevent injection
+    validateNotebookId(notebookId);
+
     const fileName = `${notebookId}.yaml`;
     const filePath = path.join(this.versionsDir, fileName);
 
     // Write notebook content
     await fs.writeFile(filePath, content, 'utf-8');
 
-    // Stage and commit
-    await this.execGit(`add "${fileName}"`);
+    // Stage and commit (using args array prevents shell injection)
+    await this.execGit(['add', fileName]);
 
     try {
-      await this.execGit(`commit -m "${message.replace(/"/g, '\\"')}"`);
-      const hash = await this.execGit('rev-parse HEAD');
+      await this.execGit(['commit', '-m', message]);
+      const hash = await this.execGit(['rev-parse', 'HEAD']);
       return hash;
     } catch {
       // If nothing to commit, return current HEAD
-      const hash = await this.execGit('rev-parse HEAD');
+      const hash = await this.execGit(['rev-parse', 'HEAD']);
       return hash;
     }
   }
@@ -90,12 +113,19 @@ export class VersionManager {
   async getHistory(notebookId: string, limit = 50): Promise<VersionInfo[]> {
     await this.init();
 
+    // Validate inputs to prevent injection
+    validateNotebookId(notebookId);
+
     const fileName = `${notebookId}.yaml`;
 
     try {
-      const output = await this.execGit(
-        `log --format="%H|%s|%aI" -n ${limit} -- "${fileName}"`
-      );
+      const output = await this.execGit([
+        'log',
+        '--format=%H|%s|%aI',
+        '-n', String(limit),
+        '--',
+        fileName,
+      ]);
 
       if (!output.trim()) {
         return [];
@@ -120,10 +150,14 @@ export class VersionManager {
   async getVersion(notebookId: string, hash: string): Promise<string | null> {
     await this.init();
 
+    // Validate inputs to prevent injection
+    validateNotebookId(notebookId);
+    validateGitHash(hash);
+
     const fileName = `${notebookId}.yaml`;
 
     try {
-      const content = await this.execGit(`show ${hash}:"${fileName}"`);
+      const content = await this.execGit(['show', `${hash}:${fileName}`]);
       return content;
     } catch {
       return null;
