@@ -170,4 +170,14 @@ contextBridge.exposeInMainWorld('promptbook', {
     cleanupDeletedFiles: (projectId: string, existingFiles: string[]) =>
       ipcRenderer.invoke('session:cleanupDeletedFiles', projectId, existingFiles),
   },
+  // Test utilities (only active in test mode)
+  test: {
+    onEvent: (callback: (eventName: string, data: unknown) => void) => {
+      const handler = (_event: IpcRendererEvent, eventName: string, data: unknown) =>
+        callback(eventName, data);
+      ipcRenderer.on('test:event', handler);
+      return () => ipcRenderer.removeListener('test:event', handler);
+    },
+    isTestMode: () => process.env.PROMPTBOOK_TEST_MODE === 'true',
+  },
 });

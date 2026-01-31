@@ -2,6 +2,7 @@ import { ipcMain } from 'electron';
 import * as yaml from 'yaml';
 import { projectService, type Project } from '../services/ProjectService';
 import { sessionService } from '../services/SessionService';
+import { testEventService } from '../services/TestEventService';
 
 /** Register file operation handlers (list, create, read, write, delete, rename) */
 function registerFileHandlers(): void {
@@ -119,6 +120,10 @@ export function registerProjectHandlers(): void {
   ipcMain.handle('project:create', async (_event, name: string, customPath?: string) => {
     try {
       const project = await projectService.createProject(name, customPath);
+      testEventService.emitTestEvent('project:created', {
+        projectId: project.id,
+        name: project.name,
+      });
       return { success: true, project };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -131,6 +136,7 @@ export function registerProjectHandlers(): void {
       if (!project) {
         return { success: false, error: 'Project not found' };
       }
+      testEventService.emitTestEvent('project:opened', { projectId });
       return { success: true, project };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -153,6 +159,7 @@ export function registerProjectHandlers(): void {
     try {
       const success = await projectService.deleteProject(projectId, deleteFiles);
       sessionService.clearSession(projectId);
+      testEventService.emitTestEvent('project:deleted', { projectId });
       return { success };
     } catch (err) {
       return { success: false, error: String(err) };

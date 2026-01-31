@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
 import { kernelService } from '../services/KernelService';
+import { testEventService } from '../services/TestEventService';
 
 // Settings type with at least python config
 interface KernelSettings {
@@ -57,7 +58,24 @@ function registerBasicHandlers(): void {
 // Register execution handlers (execute, interrupt, restart, status)
 function registerExecutionHandlers(): void {
   ipcMain.handle('kernel:execute', async (_event, code: string) => {
-    return kernelService.execute(code);
+    const startTime = Date.now();
+    const result = await kernelService.execute(code);
+
+    // Emit test events for kernel execution
+    if (result.success && result.msgId) {
+      testEventService.emitTestEvent('kernel:execute:start', {
+        code,
+        msgId: result.msgId,
+      });
+
+      testEventService.emitTestEvent('kernel:execute:complete', {
+        msgId: result.msgId,
+        outputs: result.outputs || [],
+        durationMs: Date.now() - startTime,
+      });
+    }
+
+    return result;
   });
 
   ipcMain.handle('kernel:interrupt', async () => {
