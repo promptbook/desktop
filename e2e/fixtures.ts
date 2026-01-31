@@ -131,10 +131,16 @@ export const test = base.extend<TestFixtures>({
     const projectsDir = path.join(dir, 'projects');
     fs.mkdirSync(projectsDir, { recursive: true });
 
+    console.log('Test data directory:', dir);
+
     await use(dir);
 
-    // Cleanup after test
-    fs.rmSync(dir, { recursive: true, force: true });
+    // Cleanup after test (unless KEEP_TEST_DATA is set)
+    if (process.env.KEEP_TEST_DATA !== 'true') {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } else {
+      console.log('Keeping test data at:', dir);
+    }
   },
 
   testEvents: async ({}, use) => {

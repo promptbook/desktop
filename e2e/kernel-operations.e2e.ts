@@ -6,6 +6,55 @@
  */
 import { test, expect } from './fixtures';
 
+/**
+ * Helper to start kernel if not running
+ */
+async function ensureKernelStarted(appPage: any): Promise<boolean> {
+  const status = await appPage.evaluate(async () => {
+    // @ts-expect-error - promptbook API
+    return window.promptbook.kernel.getStatus();
+  });
+
+  if (status.state === 'idle') {
+    return true; // Already running
+  }
+
+  // Try to find a Python environment and start kernel
+  const envs = await appPage.evaluate(async () => {
+    // @ts-expect-error - promptbook API
+    return window.promptbook.kernel.scanEnvironments();
+  });
+
+  // Find an environment with ipykernel
+  const validEnv = envs.find((e: { hasIpykernel: boolean }) => e.hasIpykernel);
+  if (!validEnv) {
+    console.log('No Python environment with ipykernel found');
+    return false;
+  }
+
+  // Select the environment (this starts the kernel)
+  const selectResult = await appPage.evaluate(async (pythonPath: string) => {
+    // @ts-expect-error - promptbook API
+    return window.promptbook.kernel.selectEnvironment(pythonPath);
+  }, validEnv.path);
+
+  if (!selectResult.success) {
+    console.log('Failed to select environment:', selectResult.error);
+    return false;
+  }
+
+  // Wait for kernel to be ready
+  await appPage.waitForTimeout(5000);
+
+  const newStatus = await appPage.evaluate(async () => {
+    // @ts-expect-error - promptbook API
+    return window.promptbook.kernel.getStatus();
+  });
+
+  console.log('Kernel status after start:', newStatus.state);
+  return newStatus.state === 'idle';
+}
+
 test.describe('Kernel Operations', () => {
   test.describe('Environment Management', () => {
     test('should scan for Python environments', async ({ appPage }) => {
@@ -67,15 +116,11 @@ test.describe('Kernel Operations', () => {
 
   test.describe('Code Execution', () => {
     // These tests require a kernel to be running
-    // They will be skipped if no kernel is available
+    // They will try to start a kernel if one isn't running
 
     test('should execute simple code', async ({ appPage }) => {
-      const status = await appPage.evaluate(async () => {
-        // @ts-expect-error - promptbook API
-        return window.promptbook.kernel.getStatus();
-      });
-
-      if (status.state !== 'idle') {
+      const kernelReady = await ensureKernelStarted(appPage);
+      if (!kernelReady) {
         test.skip();
         return;
       }
@@ -94,12 +139,8 @@ test.describe('Kernel Operations', () => {
     });
 
     test('should execute code with return value', async ({ appPage }) => {
-      const status = await appPage.evaluate(async () => {
-        // @ts-expect-error - promptbook API
-        return window.promptbook.kernel.getStatus();
-      });
-
-      if (status.state !== 'idle') {
+      const kernelReady = await ensureKernelStarted(appPage);
+      if (!kernelReady) {
         test.skip();
         return;
       }
@@ -115,12 +156,8 @@ test.describe('Kernel Operations', () => {
     });
 
     test('should handle execution errors gracefully', async ({ appPage }) => {
-      const status = await appPage.evaluate(async () => {
-        // @ts-expect-error - promptbook API
-        return window.promptbook.kernel.getStatus();
-      });
-
-      if (status.state !== 'idle') {
+      const kernelReady = await ensureKernelStarted(appPage);
+      if (!kernelReady) {
         test.skip();
         return;
       }
@@ -137,12 +174,8 @@ test.describe('Kernel Operations', () => {
     });
 
     test('should execute multi-line code', async ({ appPage }) => {
-      const status = await appPage.evaluate(async () => {
-        // @ts-expect-error - promptbook API
-        return window.promptbook.kernel.getStatus();
-      });
-
-      if (status.state !== 'idle') {
+      const kernelReady = await ensureKernelStarted(appPage);
+      if (!kernelReady) {
         test.skip();
         return;
       }
@@ -166,12 +199,8 @@ print(result)
     });
 
     test('should execute dependent cells', async ({ appPage }) => {
-      const status = await appPage.evaluate(async () => {
-        // @ts-expect-error - promptbook API
-        return window.promptbook.kernel.getStatus();
-      });
-
-      if (status.state !== 'idle') {
+      const kernelReady = await ensureKernelStarted(appPage);
+      if (!kernelReady) {
         test.skip();
         return;
       }
@@ -205,12 +234,8 @@ print(result)
 
   test.describe('Kernel Control', () => {
     test('should interrupt execution', async ({ appPage }) => {
-      const status = await appPage.evaluate(async () => {
-        // @ts-expect-error - promptbook API
-        return window.promptbook.kernel.getStatus();
-      });
-
-      if (status.state !== 'idle') {
+      const kernelReady = await ensureKernelStarted(appPage);
+      if (!kernelReady) {
         test.skip();
         return;
       }
@@ -256,12 +281,8 @@ print(result)
 
   test.describe('Variable Inspection', () => {
     test('should get variables from kernel', async ({ appPage }) => {
-      const status = await appPage.evaluate(async () => {
-        // @ts-expect-error - promptbook API
-        return window.promptbook.kernel.getStatus();
-      });
-
-      if (status.state !== 'idle') {
+      const kernelReady = await ensureKernelStarted(appPage);
+      if (!kernelReady) {
         test.skip();
         return;
       }
@@ -293,12 +314,8 @@ test_list = [1, 2, 3]
     });
 
     test('should get symbols (variables and functions)', async ({ appPage }) => {
-      const status = await appPage.evaluate(async () => {
-        // @ts-expect-error - promptbook API
-        return window.promptbook.kernel.getStatus();
-      });
-
-      if (status.state !== 'idle') {
+      const kernelReady = await ensureKernelStarted(appPage);
+      if (!kernelReady) {
         test.skip();
         return;
       }
@@ -339,12 +356,8 @@ def my_function(x):
 
   test.describe('Kernel Events', () => {
     test('should receive output events', async ({ appPage, testEvents, waitForEvent }) => {
-      const status = await appPage.evaluate(async () => {
-        // @ts-expect-error - promptbook API
-        return window.promptbook.kernel.getStatus();
-      });
-
-      if (status.state !== 'idle') {
+      const kernelReady = await ensureKernelStarted(appPage);
+      if (!kernelReady) {
         test.skip();
         return;
       }
