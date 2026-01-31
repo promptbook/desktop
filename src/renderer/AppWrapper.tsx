@@ -82,7 +82,9 @@ function AppContent() {
         <div className="app-wrapper__content">
           {hasTabs && activeTab ? (
             // Show notebook editor for active tab
+            // Key ensures component remounts when switching tabs or reopening same file
             <NotebookContainer
+              key={activeTab.id}
               projectId={projectState.currentProject.id}
               filePath={activeTab.filePath}
               onOpenSettings={handleOpenSettings}
