@@ -58,6 +58,11 @@ contextBridge.exposeInMainWorld('promptbook', {
     uninstallPackage: (packageName: string) =>
       ipcRenderer.invoke('kernel:uninstallPackage', packageName),
 
+    // Working directory
+    setWorkingDir: (dir: string | null) =>
+      ipcRenderer.invoke('kernel:setWorkingDir', dir),
+    getWorkingDir: () => ipcRenderer.invoke('kernel:getWorkingDir'),
+
     // Event listeners
     onOutput: (callback: (output: KernelOutput, msgId: string) => void) => {
       const handler = (_event: IpcRendererEvent, output: KernelOutput, msgId: string) =>

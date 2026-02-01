@@ -170,6 +170,7 @@ export class KernelService {
   private pythonSetup: PythonSetup;
   private cachedEnvironments: PythonEnvironment[] = [];
   private mainWindow: (() => BrowserWindow | null) | null = null;
+  private workingDir: string | null = null;
 
   private outputCallbacks: OutputCallback[] = [];
   private stateCallbacks: StateCallback[] = [];
@@ -177,6 +178,38 @@ export class KernelService {
 
   constructor(workspaceDir?: string) {
     this.pythonSetup = new PythonSetup(workspaceDir);
+  }
+
+  /**
+   * Set the working directory for the kernel
+   * This affects where relative file paths are resolved
+   * If the kernel is running, it will change directory immediately via os.chdir()
+   */
+  async setWorkingDir(dir: string | null): Promise<{ success: boolean; error?: string }> {
+    this.workingDir = dir;
+    if (this.kernelManager) {
+      this.kernelManager.setWorkingDir(dir);
+      // If kernel is running, change its working directory dynamically
+      if (dir && this.getState() !== 'disconnected' && this.getState() !== 'dead') {
+        try {
+          // Escape backslashes and quotes in path for Python string
+          const escapedPath = dir.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const code = `import os; os.chdir('${escapedPath}')`;
+          await this.kernelManager.execute(code);
+          return { success: true };
+        } catch (err) {
+          return { success: false, error: String(err) };
+        }
+      }
+    }
+    return { success: true };
+  }
+
+  /**
+   * Get the current working directory
+   */
+  getWorkingDir(): string | null {
+    return this.workingDir;
   }
 
   /**
@@ -248,7 +281,7 @@ export class KernelService {
         return { success: false, error: 'ipykernel not installed', needsInstall: true };
       }
 
-      this.kernelManager = new KernelManager(pythonPath);
+      this.kernelManager = new KernelManager(pythonPath, this.workingDir || undefined);
       this.setupEventForwarding();
       await this.kernelManager.start();
 

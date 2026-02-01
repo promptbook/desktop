@@ -109,6 +109,14 @@ function registerExecutionHandlers(): void {
   ipcMain.handle('kernel:uninstallPackage', async (_event, packageName: string) => {
     return kernelService.uninstallPackage(packageName);
   });
+
+  ipcMain.handle('kernel:setWorkingDir', async (_event, dir: string | null) => {
+    return kernelService.setWorkingDir(dir);
+  });
+
+  ipcMain.handle('kernel:getWorkingDir', async () => {
+    return { success: true, dir: kernelService.getWorkingDir() };
+  });
 }
 
 // Register environment selection handler

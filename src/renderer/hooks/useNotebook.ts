@@ -311,6 +311,14 @@ function useFileLoadEffect(
             const parsed = yaml.parse(result.content);
             setNotebook(parsed);
             setFilePath(initialFilePath);
+
+            // Set the kernel working directory to the notebook's directory
+            const notebookDir = initialFilePath.substring(0, initialFilePath.lastIndexOf('/'));
+            if (notebookDir) {
+              window.promptbook.kernel.setWorkingDir(notebookDir).catch(err => {
+                console.error('Failed to set working directory:', err);
+              });
+            }
           } catch (err) {
             console.error('Failed to parse notebook:', err);
             setFilePath(initialFilePath);

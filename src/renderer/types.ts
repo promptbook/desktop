@@ -86,6 +86,8 @@ declare global {
           output?: string;
           error?: string;
         }>;
+        setWorkingDir: (dir: string | null) => Promise<{ success: boolean }>;
+        getWorkingDir: () => Promise<{ success: boolean; dir: string | null }>;
         onOutput: (callback: (output: KernelOutput, msgId: string) => void) => () => void;
         onStateChange: (callback: (state: KernelState) => void) => () => void;
         onError: (callback: (error: string) => void) => () => void;

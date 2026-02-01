@@ -23,6 +23,14 @@ export function useFileOperations(
         const loadedNotebook = await window.promptbook.file.read(path);
         notebookHook.setNotebook(loadedNotebook);
         notebookHook.setFilePath(path);
+
+        // Set the kernel working directory to the notebook's directory
+        const notebookDir = path.substring(0, path.lastIndexOf('/'));
+        if (notebookDir) {
+          window.promptbook.kernel.setWorkingDir(notebookDir).catch(err => {
+            console.error('Failed to set working directory:', err);
+          });
+        }
       } catch (error) {
         console.error('Failed to load notebook:', error);
       }
