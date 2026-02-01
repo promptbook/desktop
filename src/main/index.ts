@@ -21,6 +21,7 @@ import { registerAiHandlers } from './ipc/aiHandlers';
 import { registerFileHandlers } from './ipc/fileHandlers';
 import { registerVersionHandlers } from './ipc/versionHandlers';
 import { registerUtilityHandlers } from './ipc/utilityHandlers';
+import { registerDataFrameHandlers } from './ipc/dataframeHandlers';
 import { testEventService } from './services/TestEventService';
 
 // ============================================
@@ -254,6 +255,7 @@ app.whenReady().then(async () => {
     (settings) => { currentSettings = settings; },
     saveSettings
   );
+  registerDataFrameHandlers();
 
   // Scan for environments in background
   scanEnvironments().catch((err) => log.error('Failed to scan environments:', err));
