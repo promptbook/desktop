@@ -304,20 +304,29 @@ function useFileLoadEffect(
   useEffect(() => {
     if (projectId && initialFilePath && initialFilePath !== currentFileRef.current) {
       currentFileRef.current = initialFilePath;
-      window.promptbook.project.readFile(projectId, initialFilePath).then((result) => {
-        if (result.success && result.content) {
+
+      // First get the project path, then read the file
+      Promise.all([
+        window.promptbook.project.getPath(projectId),
+        window.promptbook.project.readFile(projectId, initialFilePath)
+      ]).then(([pathResult, fileResult]) => {
+        if (fileResult.success && fileResult.content) {
           try {
             // Parse YAML content (notebooks are saved as YAML)
-            const parsed = yaml.parse(result.content);
+            const parsed = yaml.parse(fileResult.content);
             setNotebook(parsed);
             setFilePath(initialFilePath);
 
             // Set the kernel working directory to the notebook's directory
-            const notebookDir = initialFilePath.substring(0, initialFilePath.lastIndexOf('/'));
-            if (notebookDir) {
-              window.promptbook.kernel.setWorkingDir(notebookDir).catch(err => {
-                console.error('Failed to set working directory:', err);
-              });
+            // Combine project path with relative file path to get absolute path
+            if (pathResult.success && pathResult.path) {
+              const absoluteFilePath = `${pathResult.path}/${initialFilePath}`;
+              const notebookDir = absoluteFilePath.substring(0, absoluteFilePath.lastIndexOf('/'));
+              if (notebookDir) {
+                window.promptbook.kernel.setWorkingDir(notebookDir).catch(err => {
+                  console.error('Failed to set working directory:', err);
+                });
+              }
             }
           } catch (err) {
             console.error('Failed to parse notebook:', err);

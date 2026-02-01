@@ -125,6 +125,18 @@ export function registerProjectHandlers(): void {
     }
   });
 
+  ipcMain.handle('project:getPath', async (_event, projectId: string) => {
+    try {
+      const project = projectService.getProject(projectId);
+      if (!project) {
+        return { success: false, error: 'Project not found' };
+      }
+      return { success: true, path: project.path };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
   ipcMain.handle('project:create', async (_event, name: string, customPath?: string) => {
     try {
       const project = await projectService.createProject(name, customPath);

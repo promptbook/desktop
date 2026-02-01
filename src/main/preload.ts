@@ -134,6 +134,7 @@ contextBridge.exposeInMainWorld('promptbook', {
       ipcRenderer.invoke('project:updateSettings', updates),
     list: () => ipcRenderer.invoke('project:list'),
     getRecent: (limit?: number) => ipcRenderer.invoke('project:getRecent', limit),
+    getPath: (projectId: string) => ipcRenderer.invoke('project:getPath', projectId),
     create: (name: string, customPath?: string) =>
       ipcRenderer.invoke('project:create', name, customPath),
     open: (projectId: string) => ipcRenderer.invoke('project:open', projectId),

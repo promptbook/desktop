@@ -168,6 +168,17 @@ declare global {
           content?: string;
           error?: string;
         }>;
+        getPath: (projectId: string) => Promise<{
+          success: boolean;
+          path?: string;
+          error?: string;
+        }>;
+        listFiles: (projectId: string, relativePath?: string) => Promise<{
+          success: boolean;
+          files: { name: string; path: string; isDirectory: boolean }[];
+          cwd: string;
+          error?: string;
+        }>;
       };
     };
   }
