@@ -3,7 +3,7 @@ import type {
   DataFramePageResponse,
   DataFrameOperationResponse,
   DataFrameColumnType,
-} from '@promptbook/types';
+} from '@promptbook/core';
 
 interface KernelOutput {
   type: 'stdout' | 'stderr' | 'result' | 'display' | 'error' | 'status';

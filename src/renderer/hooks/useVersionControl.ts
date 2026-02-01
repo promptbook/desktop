@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { NotebookState } from '@promptbook/ui';
+import { NotebookState } from '@promptbook/core';
 import { UseNotebookReturn } from './useNotebook';
 
 export interface UseVersionControlReturn {

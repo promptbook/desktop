@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { NotebookState, CellState } from '@promptbook/ui';
-import type { CellContext } from '@promptbook/types';
+import type { NotebookState, CellState } from '@promptbook/core';
+import type { CellContext } from '@promptbook/core';
 import { extractParams } from '../utils/paramUtils';
 
 interface BackgroundSyncTask {

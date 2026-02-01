@@ -19,8 +19,6 @@
     "@anthropic-ai/claude-agent-sdk": "^0.2.23",
     "@anthropic-ai/sdk": "^0.72.0",
     "@promptbook/core": "workspace:*",
-    "@promptbook/types": "workspace:*",
-    "@promptbook/ui": "workspace:*",
     "electron-context-menu": "^3.6.1",
     "electron-log": "^5.4.3",
     "electron-store": "^8.2.0",

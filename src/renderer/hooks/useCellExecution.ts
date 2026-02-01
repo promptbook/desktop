@@ -3,9 +3,9 @@ import type {
   NotebookState,
   CellState,
   CellOutput,
-} from '@promptbook/ui';
-import type { GeneratedSymbol, CellContext } from '@promptbook/types';
-import { detectMissingPackages, MissingPackage } from '@promptbook/types';
+} from '@promptbook/core';
+import type { GeneratedSymbol, CellContext } from '@promptbook/core';
+import { detectMissingPackages, MissingPackage } from '@promptbook/core';
 import {
   extractParams,
   getParamChanges,

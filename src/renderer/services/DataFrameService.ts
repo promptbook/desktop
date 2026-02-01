@@ -3,7 +3,7 @@ import type {
   DataFramePageResponse,
   DataFrameOperationResponse,
   DataFrameColumnType,
-} from '@promptbook/types';
+} from '@promptbook/core';
 
 /**
  * Service for DataFrame operations

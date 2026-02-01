@@ -11,9 +11,9 @@ import {
   KernelSymbol,
   PythonEnvironment,
   DataFrameCallbacks,
-} from '@promptbook/ui';
-import type { InstalledPackage } from '@promptbook/types';
-import type { DataFrameMetadata, DataFramePagination } from '@promptbook/types';
+} from '@promptbook/core';
+import type { InstalledPackage } from '@promptbook/core';
+import type { DataFrameMetadata, DataFramePagination } from '@promptbook/core';
 import { Settings, AppSettings } from './Settings';
 import { Icons } from './icons';
 import './types'; // Import global type declarations

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import type { AIAssistanceMessage } from '@promptbook/types';
+import type { AIAssistanceMessage } from '@promptbook/core';
 
 export interface UseAIAssistanceReturn {
   messages: AIAssistanceMessage[];

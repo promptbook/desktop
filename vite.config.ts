@@ -12,15 +12,11 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      // Resolve from source for proper ESM bundling
-      '@promptbook/types': path.resolve(__dirname, '../types/src'),
-      '@promptbook/ui/styles': path.resolve(__dirname, '../ui/src/styles/index.css'),
-      '@promptbook/ui': path.resolve(__dirname, '../ui/src'),
-      '@promptbook/sync': path.resolve(__dirname, '../sync/src'),
-      '@promptbook/core': path.resolve(__dirname, '../core/src'),
-      '@promptbook/core/ui': path.resolve(__dirname, '../core/src/ui'),
-      '@promptbook/core/utils': path.resolve(__dirname, '../core/src/utils'),
+      // Resolve @promptbook/core from source for proper ESM bundling
       '@promptbook/core/styles': path.resolve(__dirname, '../core/src/ui/styles/index.css'),
+      '@promptbook/core/kernel': path.resolve(__dirname, '../core/src/kernel'),
+      '@promptbook/core/utils': path.resolve(__dirname, '../core/src/utils'),
+      '@promptbook/core': path.resolve(__dirname, '../core/src'),
     },
   },
 });

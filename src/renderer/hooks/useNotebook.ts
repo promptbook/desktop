@@ -4,23 +4,23 @@ import type {
   NotebookState,
   CellState,
   CellType,
-} from '@promptbook/ui';
+} from '@promptbook/core';
 import {
   createEmptyNotebook,
   createCodeCell,
   createTextCell,
-} from '@promptbook/ui';
+} from '@promptbook/core';
 import {
   generatePipInstallCommand,
   countPipInstalls,
-} from '@promptbook/types';
+} from '@promptbook/core';
 import { useCellExecution } from './useCellExecution';
 import type { PackageInstallModalState } from './useCellExecution';
 import { useBackgroundSync } from './useBackgroundSync';
 
 export type InstallAction = 'once' | 'current-cell' | 'setup-cell';
 
-import type { GeneratedSymbol } from '@promptbook/types';
+import type { GeneratedSymbol } from '@promptbook/core';
 
 export interface UseNotebookReturn {
   notebook: NotebookState;
