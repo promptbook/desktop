@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   Notebook,
   KernelStatus,
@@ -9,7 +9,9 @@ import {
   PackageInstallModal,
   KernelSymbol,
   PythonEnvironment,
+  DataFrameCallbacks,
 } from '@promptbook/ui';
+import type { DataFrameMetadata, DataFramePagination } from '@promptbook/types';
 import { Settings, AppSettings } from './Settings';
 import { Icons } from './icons';
 import './types'; // Import global type declarations
@@ -201,10 +203,11 @@ interface NotebookContentProps {
   notebookHook: ReturnType<typeof useNotebook>;
   getSymbols: () => Promise<KernelSymbol[]>;
   aiAssistance: ReturnType<typeof useAIAssistance>;
+  dataframeCallbacks: DataFrameCallbacks;
 }
 
 // NotebookContent component - main notebook area
-function NotebookContent({ notebookHook, getSymbols, aiAssistance }: NotebookContentProps) {
+function NotebookContent({ notebookHook, getSymbols, aiAssistance, dataframeCallbacks }: NotebookContentProps) {
   // Transform aiAssistance props to match the expected interface
   const aiAssistanceProps = {
     messages: aiAssistance.messages,
@@ -229,6 +232,7 @@ function NotebookContent({ notebookHook, getSymbols, aiAssistance }: NotebookCon
         getSymbols={getSymbols}
         preloadedSymbols={notebookHook.notebookSymbols}
         aiAssistance={aiAssistanceProps}
+        dataframeCallbacks={dataframeCallbacks}
       />
     </main>
   );
@@ -360,6 +364,37 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
     return result.success ? result.symbols : [];
   }, []);
 
+  // DataFrame callbacks for interactive DataFrame rendering
+  const dataframeCallbacks: DataFrameCallbacks = useMemo(() => ({
+    onGetPage: async (dfId: string, page: number, pageSize: number) => {
+      const result = await window.promptbook.dataframe.getPage(dfId, page, pageSize);
+      if (result.success && result.data) {
+        return result.data as { data: Record<string, unknown>[]; pagination: DataFramePagination };
+      }
+      return null;
+    },
+    onEditCell: async (dfId: string, rowIndex: number, column: string, value: unknown) => {
+      const result = await window.promptbook.dataframe.editCell(dfId, rowIndex, column, value);
+      return result.success;
+    },
+    onAddRow: async (dfId: string) => {
+      const result = await window.promptbook.dataframe.addRow(dfId);
+      return result.success && result.data ? (result.data as { metadata: DataFrameMetadata }).metadata : null;
+    },
+    onDeleteRow: async (dfId: string, rowIndex: number) => {
+      const result = await window.promptbook.dataframe.deleteRow(dfId, rowIndex);
+      return result.success && result.data ? (result.data as { metadata: DataFrameMetadata }).metadata : null;
+    },
+    onAddColumn: async (dfId: string, name: string, dtype) => {
+      const result = await window.promptbook.dataframe.addColumn(dfId, name, dtype);
+      return result.success && result.data ? (result.data as { metadata: DataFrameMetadata }).metadata : null;
+    },
+    onDeleteColumn: async (dfId: string, column: string) => {
+      const result = await window.promptbook.dataframe.deleteColumn(dfId, column);
+      return result.success && result.data ? (result.data as { metadata: DataFrameMetadata }).metadata : null;
+    },
+  }), []);
+
   // Keyboard shortcuts
   useKeyboardShortcuts({
     notebook: notebookHook.notebook, activeCellId: notebookHook.activeCellId, commandMode: notebookHook.commandMode,
@@ -402,7 +437,7 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
         onThemeToggle={theme.handleThemeToggle} onSettingsOpen={() => settingsHook.setSettingsOpen(true)}
         getThemeIcon={theme.getThemeIcon} getThemeLabel={theme.getThemeLabel}
       />
-      <NotebookContent notebookHook={notebookHook} getSymbols={handleGetSymbols} aiAssistance={aiAssistance} />
+      <NotebookContent notebookHook={notebookHook} getSymbols={handleGetSymbols} aiAssistance={aiAssistance} dataframeCallbacks={dataframeCallbacks} />
       <AppModals
         settingsOpen={settingsHook.settingsOpen} onSettingsClose={() => settingsHook.setSettingsOpen(false)}
         settings={settingsHook.settings} onSaveSettings={settingsHook.handleSaveSettings}
