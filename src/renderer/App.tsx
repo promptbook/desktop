@@ -11,6 +11,8 @@ import {
   KernelSymbol,
   PythonEnvironment,
   DataFrameCallbacks,
+  ResearchCallbacks,
+  Paper,
 } from '@promptbook/core';
 import type { InstalledPackage } from '@promptbook/core';
 import type { DataFrameMetadata, DataFramePagination } from '@promptbook/core';
@@ -38,62 +40,21 @@ interface AppProps {
   onOpenSettings?: () => void;
 }
 
-// Props for AppHeader component
 interface AppHeaderProps {
-  fileName: string | null;
-  hasUnsavedChanges: boolean;
-  themeClass: string;
-  kernelState: string;
-  selectedEnvironment: PythonEnvironment | null;
-  canUndo: boolean;
-  variableInspectorOpen: boolean;
-  packageInspectorOpen: boolean;
-  onEnvironmentClick: () => void;
-  onInterrupt: () => void;
-  onRestart: () => void;
-  onRunAll: () => void;
-  onRunAbove: () => void;
-  onRunBelow: () => void;
-  onClearAllOutputs: () => void;
-  onExportPython: () => void;
-  onUndo: () => void;
-  onOpen: () => void;
-  onSave: () => void;
-  onVariableInspectorToggle: () => void;
-  onPackageInspectorToggle: () => void;
-  onThemeToggle: () => void;
-  onSettingsOpen: () => void;
-  getThemeIcon: () => React.ReactNode;
-  getThemeLabel: () => string;
+  fileName: string | null; hasUnsavedChanges: boolean; themeClass: string; kernelState: string;
+  selectedEnvironment: PythonEnvironment | null; canUndo: boolean; variableInspectorOpen: boolean; packageInspectorOpen: boolean;
+  onEnvironmentClick: () => void; onInterrupt: () => void; onRestart: () => void;
+  onRunAll: () => void; onRunAbove: () => void; onRunBelow: () => void;
+  onClearAllOutputs: () => void; onExportPython: () => void; onUndo: () => void;
+  onOpen: () => void; onSave: () => void; onVariableInspectorToggle: () => void;
+  onPackageInspectorToggle: () => void; onThemeToggle: () => void; onSettingsOpen: () => void;
+  getThemeIcon: () => React.ReactNode; getThemeLabel: () => string;
 }
 
-// AppHeader component - extracted from App
-function AppHeader({
-  fileName,
-  hasUnsavedChanges,
-  kernelState,
-  selectedEnvironment,
-  canUndo,
-  variableInspectorOpen,
-  packageInspectorOpen,
-  onEnvironmentClick,
-  onInterrupt,
-  onRestart,
-  onRunAll,
-  onRunAbove,
-  onRunBelow,
-  onClearAllOutputs,
-  onExportPython,
-  onUndo,
-  onOpen,
-  onSave,
-  onVariableInspectorToggle,
-  onPackageInspectorToggle,
-  onThemeToggle,
-  onSettingsOpen,
-  getThemeIcon,
-  getThemeLabel,
-}: AppHeaderProps) {
+function AppHeader({ fileName, hasUnsavedChanges, kernelState, selectedEnvironment, canUndo, variableInspectorOpen,
+  packageInspectorOpen, onEnvironmentClick, onInterrupt, onRestart, onRunAll, onRunAbove, onRunBelow,
+  onClearAllOutputs, onExportPython, onUndo, onOpen, onSave, onVariableInspectorToggle, onPackageInspectorToggle,
+  onThemeToggle, onSettingsOpen, getThemeIcon, getThemeLabel }: AppHeaderProps) {
   return (
     <header className="app-header">
       <div className="app-brand">
@@ -175,46 +136,22 @@ function AppHeader({
   );
 }
 
-// Props for AppModals component
 interface AppModalsProps {
-  settingsOpen: boolean;
-  onSettingsClose: () => void;
-  settings: AppSettings;
-  onSaveSettings: (settings: AppSettings) => Promise<void>;
-  environmentPickerOpen: boolean;
-  onEnvironmentPickerClose: () => void;
-  environments: PythonEnvironment[];
-  selectedEnvironment: PythonEnvironment | null;
-  onSelectEnvironment: (env: PythonEnvironment) => void;
-  onRefreshEnvironments: () => void;
-  onCreateVenv: (name: string, pythonPath?: string) => Promise<void>;
-  isInstallingIpykernel: boolean;
-  isCreatingVenv: boolean;
-  installError: string | null;
-  packageInstallModal: { isOpen: boolean; packages: string[]; cellId: string };
-  onPackageInstallClose: () => void;
-  onInstallPackages: (packages: string[]) => Promise<void>;
-  isInstallingPackages: boolean;
-  packageInstallError: string | null;
-  globalError: string | null;
-  onDismissError: () => void;
-  variableInspectorOpen: boolean;
-  onVariableInspectorClose: () => void;
-  onRefreshVariables: () => Promise<Variable[]>;
-  packageInspectorOpen: boolean;
-  onPackageInspectorClose: () => void;
-  onRefreshPackages: () => Promise<InstalledPackage[]>;
+  settingsOpen: boolean; onSettingsClose: () => void; settings: AppSettings; onSaveSettings: (settings: AppSettings) => Promise<void>;
+  environmentPickerOpen: boolean; onEnvironmentPickerClose: () => void; environments: PythonEnvironment[];
+  selectedEnvironment: PythonEnvironment | null; onSelectEnvironment: (env: PythonEnvironment) => void;
+  onRefreshEnvironments: () => void; onCreateVenv: (name: string, pythonPath?: string) => Promise<void>;
+  isInstallingIpykernel: boolean; isCreatingVenv: boolean; installError: string | null;
+  packageInstallModal: { isOpen: boolean; packages: string[]; cellId: string }; onPackageInstallClose: () => void;
+  onInstallPackages: (packages: string[]) => Promise<void>; isInstallingPackages: boolean; packageInstallError: string | null;
+  globalError: string | null; onDismissError: () => void;
+  variableInspectorOpen: boolean; onVariableInspectorClose: () => void; onRefreshVariables: () => Promise<Variable[]>;
+  packageInspectorOpen: boolean; onPackageInspectorClose: () => void; onRefreshPackages: () => Promise<InstalledPackage[]>;
   onInstallPackage: (packageName: string) => Promise<{ success: boolean; error?: string }>;
   onUninstallPackage: (packageName: string) => Promise<{ success: boolean; error?: string }>;
-  findReplaceOpen: boolean;
-  onFindReplaceClose: () => void;
-  onSearch: (query: string, options: { caseSensitive: boolean; regex: boolean }) => {
-    cellId: string;
-    matches: { start: number; end: number }[];
-  }[];
-  onReplace: (cellId: string, matchIndex: number, replacement: string) => void;
-  onReplaceAll: (replacement: string) => void;
-  onNavigate: (cellId: string) => void;
+  findReplaceOpen: boolean; onFindReplaceClose: () => void;
+  onSearch: (query: string, options: { caseSensitive: boolean; regex: boolean }) => { cellId: string; matches: { start: number; end: number }[] }[];
+  onReplace: (cellId: string, matchIndex: number, replacement: string) => void; onReplaceAll: (replacement: string) => void; onNavigate: (cellId: string) => void;
 }
 
 // Props for NotebookContent component
@@ -223,10 +160,11 @@ interface NotebookContentProps {
   getSymbols: () => Promise<KernelSymbol[]>;
   aiAssistance: ReturnType<typeof useAIAssistance>;
   dataframeCallbacks: DataFrameCallbacks;
+  researchCallbacks: ResearchCallbacks;
 }
 
 // NotebookContent component - main notebook area
-function NotebookContent({ notebookHook, getSymbols, aiAssistance, dataframeCallbacks }: NotebookContentProps) {
+function NotebookContent({ notebookHook, getSymbols, aiAssistance, dataframeCallbacks, researchCallbacks }: NotebookContentProps) {
   // Transform aiAssistance props to match the expected interface
   const aiAssistanceProps = {
     messages: aiAssistance.messages,
@@ -252,49 +190,18 @@ function NotebookContent({ notebookHook, getSymbols, aiAssistance, dataframeCall
         preloadedSymbols={notebookHook.notebookSymbols}
         aiAssistance={aiAssistanceProps}
         dataframeCallbacks={dataframeCallbacks}
+        researchCallbacks={researchCallbacks}
       />
     </main>
   );
 }
 
-// AppModals component - extracted from App
-function AppModals({
-  settingsOpen,
-  onSettingsClose,
-  settings,
-  onSaveSettings,
-  environmentPickerOpen,
-  onEnvironmentPickerClose,
-  environments,
-  selectedEnvironment,
-  onSelectEnvironment,
-  onRefreshEnvironments,
-  onCreateVenv,
-  isInstallingIpykernel,
-  isCreatingVenv,
-  installError,
-  packageInstallModal,
-  onPackageInstallClose,
-  onInstallPackages,
-  isInstallingPackages,
-  packageInstallError,
-  globalError,
-  onDismissError,
-  variableInspectorOpen,
-  onVariableInspectorClose,
-  onRefreshVariables,
-  packageInspectorOpen,
-  onPackageInspectorClose,
-  onRefreshPackages,
-  onInstallPackage,
-  onUninstallPackage,
-  findReplaceOpen,
-  onFindReplaceClose,
-  onSearch,
-  onReplace,
-  onReplaceAll,
-  onNavigate,
-}: AppModalsProps) {
+function AppModals({ settingsOpen, onSettingsClose, settings, onSaveSettings, environmentPickerOpen, onEnvironmentPickerClose,
+  environments, selectedEnvironment, onSelectEnvironment, onRefreshEnvironments, onCreateVenv, isInstallingIpykernel,
+  isCreatingVenv, installError, packageInstallModal, onPackageInstallClose, onInstallPackages, isInstallingPackages,
+  packageInstallError, globalError, onDismissError, variableInspectorOpen, onVariableInspectorClose, onRefreshVariables,
+  packageInspectorOpen, onPackageInspectorClose, onRefreshPackages, onInstallPackage, onUninstallPackage,
+  findReplaceOpen, onFindReplaceClose, onSearch, onReplace, onReplaceAll, onNavigate }: AppModalsProps) {
   return (
     <>
       <Settings
@@ -441,6 +348,50 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
     },
   }), []);
 
+  // Research assistance callbacks
+  const researchCallbacks: ResearchCallbacks = useMemo(() => ({
+    onExplain: async (output: string, code: string): Promise<string> => {
+      const result = await window.promptbook.ai.explainOutput(output, code);
+      if (result.success && result.result) {
+        return result.result;
+      }
+      throw new Error(result.error || 'Failed to explain output');
+    },
+    onSuggestNext: async (output: string, code: string, description: string): Promise<string> => {
+      const result = await window.promptbook.ai.suggestNextSteps(output, code, description);
+      if (result.success && result.result) {
+        return result.result;
+      }
+      throw new Error(result.error || 'Failed to suggest next steps');
+    },
+    onDebug: async (error: string, code: string): Promise<string> => {
+      const result = await window.promptbook.ai.debugError(error, code);
+      if (result.success && result.result) {
+        return result.result;
+      }
+      throw new Error(result.error || 'Failed to debug error');
+    },
+    onFindPapers: async (output: string, code: string): Promise<Paper[]> => {
+      // First extract keywords from the output
+      const keywordsResult = await window.promptbook.ai.extractKeywords(output, code);
+      if (!keywordsResult.success || !keywordsResult.keywords) {
+        throw new Error(keywordsResult.error || 'Failed to extract keywords');
+      }
+      // Then search for papers
+      const papersResult = await window.promptbook.papers.search(keywordsResult.keywords);
+      if (papersResult.success && papersResult.papers) {
+        return papersResult.papers;
+      }
+      throw new Error(papersResult.error || 'Failed to find papers');
+    },
+    onApplyFix: (code: string) => {
+      // Apply the fix to the active cell
+      if (notebookHook.activeCellId) {
+        notebookHook.handleUpdate(notebookHook.activeCellId, { code });
+      }
+    },
+  }), [notebookHook]);
+
   // Keyboard shortcuts
   useKeyboardShortcuts({
     notebook: notebookHook.notebook, activeCellId: notebookHook.activeCellId, commandMode: notebookHook.commandMode,
@@ -485,7 +436,7 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
         onThemeToggle={theme.handleThemeToggle} onSettingsOpen={() => settingsHook.setSettingsOpen(true)}
         getThemeIcon={theme.getThemeIcon} getThemeLabel={theme.getThemeLabel}
       />
-      <NotebookContent notebookHook={notebookHook} getSymbols={handleGetSymbols} aiAssistance={aiAssistance} dataframeCallbacks={dataframeCallbacks} />
+      <NotebookContent notebookHook={notebookHook} getSymbols={handleGetSymbols} aiAssistance={aiAssistance} dataframeCallbacks={dataframeCallbacks} researchCallbacks={researchCallbacks} />
       <AppModals
         settingsOpen={settingsHook.settingsOpen} onSettingsClose={() => settingsHook.setSettingsOpen(false)}
         settings={settingsHook.settings} onSaveSettings={settingsHook.handleSaveSettings}

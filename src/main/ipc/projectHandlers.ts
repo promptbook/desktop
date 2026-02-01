@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron';
+import * as path from 'path';
 import * as yaml from 'yaml';
 import { projectService, type Project } from '../services/ProjectService';
 import { sessionService } from '../services/SessionService';
@@ -15,7 +16,7 @@ function registerFileHandlers(): void {
       const files = await projectService.listFiles(projectId, relativePath);
       // Return cwd as the absolute path being listed (project path + relative path)
       const cwd = relativePath
-        ? require('path').join(project.path, relativePath)
+        ? path.join(project.path, relativePath)
         : project.path;
       return { success: true, files, cwd };
     } catch (err) {

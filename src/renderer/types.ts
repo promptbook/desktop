@@ -2,6 +2,17 @@ import type { NotebookState, Variable, KernelSymbol } from '@promptbook/core';
 import type { GeneratedSymbol } from '@promptbook/core';
 import type { AppSettings } from './Settings';
 
+// Paper type for Semantic Scholar results
+export interface Paper {
+  paperId: string;
+  title: string;
+  abstract: string | null;
+  year: number | null;
+  authors: { name: string }[];
+  citationCount: number;
+  url: string;
+}
+
 // Types for kernel
 export interface KernelOutput {
   type: 'stdout' | 'stderr' | 'result' | 'display' | 'error' | 'status';
@@ -105,6 +116,13 @@ declare global {
             proposedSymbols?: string[];
           }
         ) => Promise<{ success: boolean; result?: string; symbols?: GeneratedSymbol[]; notebookSymbols?: GeneratedSymbol[]; error?: string }>;
+        explainOutput: (output: string, code: string) => Promise<{ success: boolean; result?: string; error?: string }>;
+        suggestNextSteps: (output: string, code: string, description: string) => Promise<{ success: boolean; result?: string; error?: string }>;
+        debugError: (error: string, code: string) => Promise<{ success: boolean; result?: string; error?: string }>;
+        extractKeywords: (output: string, code: string) => Promise<{ success: boolean; keywords?: string[]; error?: string }>;
+      };
+      papers: {
+        search: (keywords: string[]) => Promise<{ success: boolean; papers?: Paper[]; error?: string }>;
       };
       file: {
         open: () => Promise<string | undefined>;

@@ -91,6 +91,14 @@ contextBridge.exposeInMainWorld('promptbook', {
         existingCounterpart?: string;
       }
     ) => ipcRenderer.invoke('ai:sync', cellId, direction, context),
+    explainOutput: (output: string, code: string) =>
+      ipcRenderer.invoke('ai:explainOutput', output, code),
+    suggestNextSteps: (output: string, code: string, description: string) =>
+      ipcRenderer.invoke('ai:suggestNextSteps', output, code, description),
+    debugError: (error: string, code: string) =>
+      ipcRenderer.invoke('ai:debugError', error, code),
+    extractKeywords: (output: string, code: string) =>
+      ipcRenderer.invoke('ai:extractKeywords', output, code),
   },
   file: {
     open: () => ipcRenderer.invoke('file:open'),
@@ -192,6 +200,10 @@ contextBridge.exposeInMainWorld('promptbook', {
       return () => ipcRenderer.removeListener('test:event', handler);
     },
     isTestMode: () => process.env.PROMPTBOOK_TEST_MODE === 'true',
+  },
+  // Paper search
+  papers: {
+    search: (keywords: string[]) => ipcRenderer.invoke('papers:search', keywords),
   },
   // DataFrame operations
   dataframe: {

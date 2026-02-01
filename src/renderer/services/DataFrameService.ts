@@ -1,4 +1,4 @@
-/// <reference path="../types/promptbook.d.ts" />
+// Types imported from @promptbook/core
 import type {
   DataFramePageResponse,
   DataFrameOperationResponse,
