@@ -86,7 +86,7 @@ export function useCellExecution({
       const hasCode = cell.code?.trim();
       const lastEditedTab = cell.lastEditedTab || 'short';
 
-      // Handle dirty cell with parameter changes
+      // Handle dirty cell with parameter-only changes (skip LLM, update code directly)
       if (cell.isDirty && hasDescription && hasCode) {
         const currentShortParams = extractParams(cell.shortDescription || '');
         const currentFullParams = extractParams(cell.pseudoCode || '');
@@ -95,6 +95,7 @@ export function useCellExecution({
         if (cell.lastSyncedParams) {
           const { added, removed, changed } = getParamChanges(cell.lastSyncedParams, currentParams);
 
+          // If ONLY parameter values changed (no structural changes), apply directly without LLM
           if (added.length === 0 && removed.length === 0 && Object.keys(changed).length > 0) {
             const newCode = applyParamChangesToCode(cell.code, changed);
             const newShort = applyParamChangesToDescription(cell.shortDescription || '', changed);
@@ -110,7 +111,11 @@ export function useCellExecution({
               lastSyncedParams: currentParams,
               isDirty: false,
             });
-            cell = { ...cell, code: newCode, shortDescription: newShort, pseudoCode: newFull };
+
+            // Update local cell and execute immediately (no LLM call needed)
+            cell = { ...cell, code: newCode, shortDescription: newShort, pseudoCode: newFull, isDirty: false };
+            await executeCode(cellId, cell, handleUpdate, setEnvironmentPickerOpen, setPackageInstallModal, setPackageInstallError);
+            return;
           }
         }
       }
@@ -148,6 +153,36 @@ export function useCellExecution({
       const cellIndex = notebook.cells.findIndex((c) => c.id === cellId);
       const cell = notebook.cells[cellIndex];
       if (!cell || cell.cellType === 'text') return;
+
+      // Check for param-only changes first (skip LLM if only params changed)
+      const hasDescription = cell.shortDescription?.trim() || cell.pseudoCode?.trim();
+      const hasCode = cell.code?.trim();
+
+      if (hasDescription && hasCode && cell.lastSyncedParams) {
+        const currentShortParams = extractParams(cell.shortDescription || '');
+        const currentFullParams = extractParams(cell.pseudoCode || '');
+        const currentParams = { ...currentShortParams, ...currentFullParams };
+        const { added, removed, changed } = getParamChanges(cell.lastSyncedParams, currentParams);
+
+        // If ONLY parameter values changed, apply directly without LLM
+        if (added.length === 0 && removed.length === 0 && Object.keys(changed).length > 0) {
+          const newCode = applyParamChangesToCode(cell.code, changed);
+          const newShort = applyParamChangesToDescription(cell.shortDescription || '', changed);
+          const newFull = applyParamChangesToDescription(cell.pseudoCode || '', changed);
+
+          handleUpdate(cellId, {
+            code: newCode,
+            shortDescription: newShort,
+            pseudoCode: newFull,
+            lastSyncedCode: newCode,
+            lastSyncedShort: newShort,
+            lastSyncedPseudo: newFull,
+            lastSyncedParams: currentParams,
+            isDirty: false,
+          });
+          return; // No LLM call needed
+        }
+      }
 
       const cellsBefore: CellContext[] = notebook.cells
         .slice(0, cellIndex)
