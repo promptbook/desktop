@@ -3,12 +3,16 @@ import { ProjectProvider, SessionProvider, useProject, useSession } from './cont
 import { ProjectLanding, TabBar, FloatingSidebar, EmptyState } from './components';
 import { App } from './App';
 import { Settings, AppSettings, defaultSettings } from './Settings';
+import { useE2ETestHelpers } from './hooks';
 import './AppWrapper.css';
 
 // Inner component that uses the contexts
 function AppContent() {
   const { state: projectState } = useProject();
   const { state: sessionState, addTab, getActiveTab } = useSession();
+
+  // Enable E2E test helpers (exposes navigation functions to window.__e2e)
+  useE2ETestHelpers();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);

@@ -4,7 +4,7 @@ import type {
   CellState,
   CellOutput,
 } from '@promptbook/ui';
-import type { GeneratedSymbol } from '@promptbook/types';
+import type { GeneratedSymbol, CellContext } from '@promptbook/types';
 import { detectMissingPackages, MissingPackage } from '@promptbook/types';
 import {
   extractParams,
@@ -12,7 +12,7 @@ import {
   applyParamChangesToCode,
   applyParamChangesToDescription,
 } from '../utils/paramUtils';
-import type { CellContext } from '../types';
+import type { UseBackgroundSyncReturn } from './useBackgroundSync';
 
 export interface PackageInstallModalState {
   isOpen: boolean;
@@ -29,6 +29,7 @@ interface UseCellExecutionParams {
   setEnvironmentPickerOpen: (open: boolean) => void;
   setPackageInstallModal: React.Dispatch<React.SetStateAction<PackageInstallModalState>>;
   setPackageInstallError: (error: string | null) => void;
+  backgroundSync?: UseBackgroundSyncReturn;
 }
 
 /** Helper to update notebook symbols from LLM response */
@@ -56,6 +57,7 @@ export function useCellExecution({
   setEnvironmentPickerOpen,
   setPackageInstallModal,
   setPackageInstallError,
+  backgroundSync,
 }: UseCellExecutionParams) {
   const handleRunCell = useCallback(
     async (cellId: string) => {
@@ -82,6 +84,7 @@ export function useCellExecution({
 
       const hasDescription = cell.shortDescription?.trim() || cell.pseudoCode?.trim();
       const hasCode = cell.code?.trim();
+      const lastEditedTab = cell.lastEditedTab || 'short';
 
       // Handle dirty cell with parameter changes
       if (cell.isDirty && hasDescription && hasCode) {
@@ -112,13 +115,23 @@ export function useCellExecution({
         }
       }
 
-      // Sync with AI if still dirty
+      // FEATURE 1: If user edited CODE tab, run immediately and sync in background
+      if (cell.isDirty && lastEditedTab === 'code' && hasCode && backgroundSync) {
+        // Execute immediately without waiting for sync
+        await executeCode(cellId, cell, handleUpdate, setEnvironmentPickerOpen, setPackageInstallModal, setPackageInstallError);
+
+        // Queue background sync to regenerate Instructions and Detailed tabs
+        backgroundSync.queueSync(cellId, cell.code, cellsBefore, cellsAfter);
+        return;
+      }
+
+      // Original behavior for non-code edits: Sync with AI if still dirty
       if (cell.isDirty && hasDescription) {
         cell = await syncCellWithAI(cellId, cell, cellsBefore, cellsAfter, handleUpdate, handleSaveVersion, onError, setNotebook);
         if (!cell) return;
       }
 
-      // Generate code if only description exists
+      // Generate code if only description exists (no code yet)
       if (hasDescription && !hasCode) {
         cell = await generateCodeFromDescription(cellId, cell, cellsBefore, cellsAfter, handleUpdate, handleSaveVersion, onError, setNotebook);
         if (!cell) return;
@@ -127,7 +140,7 @@ export function useCellExecution({
       // Execute the code
       await executeCode(cellId, cell, handleUpdate, setEnvironmentPickerOpen, setPackageInstallModal, setPackageInstallError);
     },
-    [notebook.cells, setNotebook, handleUpdate, handleSaveVersion, onError, setEnvironmentPickerOpen, setPackageInstallModal, setPackageInstallError]
+    [notebook.cells, setNotebook, handleUpdate, handleSaveVersion, onError, setEnvironmentPickerOpen, setPackageInstallModal, setPackageInstallError, backgroundSync]
   );
 
   const handleSyncCell = useCallback(

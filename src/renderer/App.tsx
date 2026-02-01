@@ -25,6 +25,7 @@ import {
   useVersionControl,
   useSettings,
 } from './hooks';
+import { useAIAssistance } from './hooks/useAIAssistance';
 
 // Props for integration with project management (Electron only)
 interface AppProps {
@@ -199,10 +200,19 @@ interface AppModalsProps {
 interface NotebookContentProps {
   notebookHook: ReturnType<typeof useNotebook>;
   getSymbols: () => Promise<KernelSymbol[]>;
+  aiAssistance: ReturnType<typeof useAIAssistance>;
 }
 
 // NotebookContent component - main notebook area
-function NotebookContent({ notebookHook, getSymbols }: NotebookContentProps) {
+function NotebookContent({ notebookHook, getSymbols, aiAssistance }: NotebookContentProps) {
+  // Transform aiAssistance props to match the expected interface
+  const aiAssistanceProps = {
+    messages: aiAssistance.messages,
+    isLoading: aiAssistance.isLoading,
+    onSendMessage: aiAssistance.sendMessage,
+    clearHistory: aiAssistance.clearHistory,
+  };
+
   return (
     <main className="app-main">
       <Notebook
@@ -218,6 +228,7 @@ function NotebookContent({ notebookHook, getSymbols }: NotebookContentProps) {
         listFiles={notebookHook.listFiles}
         getSymbols={getSymbols}
         preloadedSymbols={notebookHook.notebookSymbols}
+        aiAssistance={aiAssistanceProps}
       />
     </main>
   );
@@ -335,6 +346,9 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
   const fileOps = useFileOperations(notebookHook, autoSave, setGlobalError);
   const findReplace = useFindReplace(notebookHook.notebook, notebookHook.setNotebook);
 
+  // AI Assistance hook
+  const aiAssistance = useAIAssistance();
+
   // Callbacks for kernel operations
   const handleRefreshVariables = useCallback(async (): Promise<Variable[]> => {
     const result = await window.promptbook.kernel.getVariables();
@@ -388,7 +402,7 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
         onThemeToggle={theme.handleThemeToggle} onSettingsOpen={() => settingsHook.setSettingsOpen(true)}
         getThemeIcon={theme.getThemeIcon} getThemeLabel={theme.getThemeLabel}
       />
-      <NotebookContent notebookHook={notebookHook} getSymbols={handleGetSymbols} />
+      <NotebookContent notebookHook={notebookHook} getSymbols={handleGetSymbols} aiAssistance={aiAssistance} />
       <AppModals
         settingsOpen={settingsHook.settingsOpen} onSettingsClose={() => settingsHook.setSettingsOpen(false)}
         settings={settingsHook.settings} onSaveSettings={settingsHook.handleSaveSettings}

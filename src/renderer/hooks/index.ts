@@ -29,3 +29,5 @@ export type { UseVersionControlReturn } from './useVersionControl';
 
 export { useSettings } from './useSettings';
 export type { UseSettingsReturn } from './useSettings';
+
+export { useE2ETestHelpers } from './useE2ETestHelpers';

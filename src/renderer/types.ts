@@ -87,7 +87,7 @@ declare global {
             cellsAfter?: CellContext[];
             proposedSymbols?: string[];
           }
-        ) => Promise<{ success: boolean; result?: string; symbols?: GeneratedSymbol[]; error?: string }>;
+        ) => Promise<{ success: boolean; result?: string; symbols?: GeneratedSymbol[]; notebookSymbols?: GeneratedSymbol[]; error?: string }>;
       };
       file: {
         open: () => Promise<string | undefined>;

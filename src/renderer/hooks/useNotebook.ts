@@ -16,6 +16,7 @@ import {
 } from '@promptbook/types';
 import { useCellExecution } from './useCellExecution';
 import type { PackageInstallModalState } from './useCellExecution';
+import { useBackgroundSync } from './useBackgroundSync';
 
 export type InstallAction = 'once' | 'current-cell' | 'setup-cell';
 
@@ -381,8 +382,11 @@ export function useNotebook(
     }));
   }, []);
 
+  // Background sync for immediate code execution
+  const backgroundSync = useBackgroundSync({ handleUpdate, setNotebook });
+
   const { handleRunCell, handleSyncCell } = useCellExecution({
-    notebook, setNotebook, handleUpdate, handleSaveVersion, onError, setEnvironmentPickerOpen, setPackageInstallModal, setPackageInstallError,
+    notebook, setNotebook, handleUpdate, handleSaveVersion, onError, setEnvironmentPickerOpen, setPackageInstallModal, setPackageInstallError, backgroundSync,
   });
 
   const cellOps = createCellOperations({ setNotebook, defaultTab, getActiveCellId, setActiveCellId });
