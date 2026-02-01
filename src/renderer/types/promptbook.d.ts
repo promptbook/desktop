@@ -1,4 +1,9 @@
 // Type declarations for window.promptbook API exposed by preload.ts
+import type {
+  DataFramePageResponse,
+  DataFrameOperationResponse,
+  DataFrameColumnType,
+} from '@promptbook/types';
 
 interface KernelOutput {
   type: 'stdout' | 'stderr' | 'result' | 'display' | 'error' | 'status';
@@ -149,6 +154,47 @@ interface PromptbookAPI {
   test: {
     onEvent: (callback: (eventName: string, data: unknown) => void) => () => void;
     isTestMode: () => boolean;
+  };
+  dataframe: {
+    getPage: (
+      dfId: string,
+      page: number,
+      pageSize: number
+    ) => Promise<DataFramePageResponse>;
+    editCell: (
+      dfId: string,
+      rowIndex: number,
+      column: string,
+      value: unknown
+    ) => Promise<DataFrameOperationResponse>;
+    addRow: (
+      dfId: string,
+      rowData?: Record<string, unknown>
+    ) => Promise<DataFrameOperationResponse>;
+    deleteRow: (
+      dfId: string,
+      rowIndex: number
+    ) => Promise<DataFrameOperationResponse>;
+    addColumn: (
+      dfId: string,
+      column: string,
+      dtype?: DataFrameColumnType,
+      defaultValue?: unknown
+    ) => Promise<DataFrameOperationResponse>;
+    deleteColumn: (
+      dfId: string,
+      column: string
+    ) => Promise<DataFrameOperationResponse>;
+    renameColumn: (
+      dfId: string,
+      column: string,
+      newName: string
+    ) => Promise<DataFrameOperationResponse>;
+    changeColumnType: (
+      dfId: string,
+      column: string,
+      newType: DataFrameColumnType
+    ) => Promise<DataFrameOperationResponse>;
   };
 }
 

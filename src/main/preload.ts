@@ -180,4 +180,23 @@ contextBridge.exposeInMainWorld('promptbook', {
     },
     isTestMode: () => process.env.PROMPTBOOK_TEST_MODE === 'true',
   },
+  // DataFrame operations
+  dataframe: {
+    getPage: (dfId: string, page: number, pageSize: number) =>
+      ipcRenderer.invoke('dataframe:getPage', dfId, page, pageSize),
+    editCell: (dfId: string, rowIndex: number, column: string, value: unknown) =>
+      ipcRenderer.invoke('dataframe:editCell', dfId, rowIndex, column, value),
+    addRow: (dfId: string, rowData?: Record<string, unknown>) =>
+      ipcRenderer.invoke('dataframe:addRow', dfId, rowData),
+    deleteRow: (dfId: string, rowIndex: number) =>
+      ipcRenderer.invoke('dataframe:deleteRow', dfId, rowIndex),
+    addColumn: (dfId: string, column: string, dtype?: string, defaultValue?: unknown) =>
+      ipcRenderer.invoke('dataframe:addColumn', dfId, column, dtype, defaultValue),
+    deleteColumn: (dfId: string, column: string) =>
+      ipcRenderer.invoke('dataframe:deleteColumn', dfId, column),
+    renameColumn: (dfId: string, column: string, newName: string) =>
+      ipcRenderer.invoke('dataframe:renameColumn', dfId, column, newName),
+    changeColumnType: (dfId: string, column: string, newType: string) =>
+      ipcRenderer.invoke('dataframe:changeColumnType', dfId, column, newType),
+  },
 });
