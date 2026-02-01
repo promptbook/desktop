@@ -382,6 +382,101 @@ export class KernelService {
     }
   }
 
+  /**
+   * List installed packages in the current environment
+   */
+  async listPackages(): Promise<{ success: boolean; packages: { name: string; version: string }[]; error?: string }> {
+    if (!this.kernelManager) {
+      return { success: false, error: 'No kernel running', packages: [] };
+    }
+    try {
+      const code = `
+import subprocess
+import json
+import sys
+result = subprocess.run([sys.executable, '-m', 'pip', 'list', '--format=json'], capture_output=True, text=True)
+print(result.stdout)
+`;
+      const result = await this.kernelManager.execute(code);
+      const stdoutOutput = result.outputs.find(o => o.type === 'stdout');
+      if (stdoutOutput) {
+        const packages = JSON.parse(stdoutOutput.content.trim());
+        return { success: true, packages };
+      }
+      return { success: true, packages: [] };
+    } catch (err) {
+      return { success: false, error: String(err), packages: [] };
+    }
+  }
+
+  /**
+   * Install a package using pip
+   */
+  async installPackage(packageName: string): Promise<{ success: boolean; output?: string; error?: string }> {
+    if (!this.kernelManager) {
+      return { success: false, error: 'No kernel running' };
+    }
+    // Validate package name to prevent command injection
+    if (!/^[a-zA-Z0-9_\-.[\]]+$/.test(packageName) || packageName.length > 100) {
+      return { success: false, error: 'Invalid package name' };
+    }
+    try {
+      const code = `
+import subprocess
+import sys
+result = subprocess.run([sys.executable, '-m', 'pip', 'install', '${packageName}'], capture_output=True, text=True)
+print(result.stdout)
+print(result.stderr)
+if result.returncode != 0:
+    raise Exception(f"pip install failed with code {result.returncode}")
+`;
+      const result = await this.kernelManager.execute(code);
+      const hasError = result.outputs.some(o => o.type === 'error');
+      if (hasError) {
+        const errorOutput = result.outputs.find(o => o.type === 'error');
+        return { success: false, error: errorOutput?.content || 'Installation failed' };
+      }
+      const stdoutOutput = result.outputs.find(o => o.type === 'stdout');
+      return { success: true, output: stdoutOutput?.content || '' };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  }
+
+  /**
+   * Uninstall a package using pip
+   */
+  async uninstallPackage(packageName: string): Promise<{ success: boolean; output?: string; error?: string }> {
+    if (!this.kernelManager) {
+      return { success: false, error: 'No kernel running' };
+    }
+    // Validate package name to prevent command injection
+    if (!/^[a-zA-Z0-9_\-.[\]]+$/.test(packageName) || packageName.length > 100) {
+      return { success: false, error: 'Invalid package name' };
+    }
+    try {
+      const code = `
+import subprocess
+import sys
+result = subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', '${packageName}'], capture_output=True, text=True)
+print(result.stdout)
+print(result.stderr)
+if result.returncode != 0:
+    raise Exception(f"pip uninstall failed with code {result.returncode}")
+`;
+      const result = await this.kernelManager.execute(code);
+      const hasError = result.outputs.some(o => o.type === 'error');
+      if (hasError) {
+        const errorOutput = result.outputs.find(o => o.type === 'error');
+        return { success: false, error: errorOutput?.content || 'Uninstall failed' };
+      }
+      const stdoutOutput = result.outputs.find(o => o.type === 'stdout');
+      return { success: true, output: stdoutOutput?.content || '' };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  }
+
   // Event subscription methods
 
   /**

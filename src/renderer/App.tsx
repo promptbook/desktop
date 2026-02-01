@@ -7,10 +7,12 @@ import {
   Variable,
   FindReplace,
   PackageInstallModal,
+  PackageInspector,
   KernelSymbol,
   PythonEnvironment,
   DataFrameCallbacks,
 } from '@promptbook/ui';
+import type { InstalledPackage } from '@promptbook/types';
 import type { DataFrameMetadata, DataFramePagination } from '@promptbook/types';
 import { Settings, AppSettings } from './Settings';
 import { Icons } from './icons';
@@ -45,6 +47,7 @@ interface AppHeaderProps {
   selectedEnvironment: PythonEnvironment | null;
   canUndo: boolean;
   variableInspectorOpen: boolean;
+  packageInspectorOpen: boolean;
   onEnvironmentClick: () => void;
   onInterrupt: () => void;
   onRestart: () => void;
@@ -57,6 +60,7 @@ interface AppHeaderProps {
   onOpen: () => void;
   onSave: () => void;
   onVariableInspectorToggle: () => void;
+  onPackageInspectorToggle: () => void;
   onThemeToggle: () => void;
   onSettingsOpen: () => void;
   getThemeIcon: () => React.ReactNode;
@@ -71,6 +75,7 @@ function AppHeader({
   selectedEnvironment,
   canUndo,
   variableInspectorOpen,
+  packageInspectorOpen,
   onEnvironmentClick,
   onInterrupt,
   onRestart,
@@ -83,6 +88,7 @@ function AppHeader({
   onOpen,
   onSave,
   onVariableInspectorToggle,
+  onPackageInspectorToggle,
   onThemeToggle,
   onSettingsOpen,
   getThemeIcon,
@@ -147,6 +153,14 @@ function AppHeader({
           <span>Variables</span>
         </button>
         <button
+          onClick={onPackageInspectorToggle}
+          title="Packages (⌥P)"
+          className={packageInspectorOpen ? 'toolbar-btn--active' : ''}
+        >
+          {Icons.package}
+          <span>Packages</span>
+        </button>
+        <button
           onClick={onThemeToggle}
           title={`Theme: ${getThemeLabel()} (click to change)`}
           className="toolbar-btn--theme"
@@ -187,6 +201,11 @@ interface AppModalsProps {
   variableInspectorOpen: boolean;
   onVariableInspectorClose: () => void;
   onRefreshVariables: () => Promise<Variable[]>;
+  packageInspectorOpen: boolean;
+  onPackageInspectorClose: () => void;
+  onRefreshPackages: () => Promise<InstalledPackage[]>;
+  onInstallPackage: (packageName: string) => Promise<{ success: boolean; error?: string }>;
+  onUninstallPackage: (packageName: string) => Promise<{ success: boolean; error?: string }>;
   findReplaceOpen: boolean;
   onFindReplaceClose: () => void;
   onSearch: (query: string, options: { caseSensitive: boolean; regex: boolean }) => {
@@ -264,6 +283,11 @@ function AppModals({
   variableInspectorOpen,
   onVariableInspectorClose,
   onRefreshVariables,
+  packageInspectorOpen,
+  onPackageInspectorClose,
+  onRefreshPackages,
+  onInstallPackage,
+  onUninstallPackage,
   findReplaceOpen,
   onFindReplaceClose,
   onSearch,
@@ -314,6 +338,13 @@ function AppModals({
         onClose={onVariableInspectorClose}
         onRefresh={onRefreshVariables}
       />
+      <PackageInspector
+        isOpen={packageInspectorOpen}
+        onClose={onPackageInspectorClose}
+        onRefresh={onRefreshPackages}
+        onInstall={onInstallPackage}
+        onUninstall={onUninstallPackage}
+      />
       <FindReplace
         isOpen={findReplaceOpen}
         onClose={onFindReplaceClose}
@@ -331,6 +362,7 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
   const settingsHook = useSettings();
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [variableInspectorOpen, setVariableInspectorOpen] = useState(false);
+  const [packageInspectorOpen, setPackageInspectorOpen] = useState(false);
 
   // Theme hook
   const theme = useTheme(settingsHook.settings, settingsHook.setSettings);
@@ -362,6 +394,20 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
   const handleGetSymbols = useCallback(async (): Promise<KernelSymbol[]> => {
     const result = await window.promptbook.kernel.getSymbols();
     return result.success ? result.symbols : [];
+  }, []);
+
+  // Package management callbacks
+  const handleRefreshPackages = useCallback(async (): Promise<InstalledPackage[]> => {
+    const result = await window.promptbook.kernel.listPackages();
+    return result.success ? result.packages : [];
+  }, []);
+
+  const handleInstallPackage = useCallback(async (packageName: string) => {
+    return await window.promptbook.kernel.installPackage(packageName);
+  }, []);
+
+  const handleUninstallPackage = useCallback(async (packageName: string) => {
+    return await window.promptbook.kernel.uninstallPackage(packageName);
   }, []);
 
   // DataFrame callbacks for interactive DataFrame rendering
@@ -422,11 +468,12 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
   }, [notebookHook]);
 
   return (
-    <div className={`app ${theme.themeClass} ${variableInspectorOpen ? 'app--inspector-open' : ''}`}>
+    <div className={`app ${theme.themeClass} ${variableInspectorOpen ? 'app--inspector-open' : ''} ${packageInspectorOpen ? 'app--packages-open' : ''}`}>
       <AppHeader
         fileName={fileName} hasUnsavedChanges={autoSave.hasUnsavedChanges} themeClass={theme.themeClass}
         kernelState={kernel.kernelState} selectedEnvironment={kernel.selectedEnvironment}
         canUndo={versionControl.canUndo} variableInspectorOpen={variableInspectorOpen}
+        packageInspectorOpen={packageInspectorOpen}
         onEnvironmentClick={() => kernel.setEnvironmentPickerOpen(true)}
         onInterrupt={kernel.handleInterrupt} onRestart={kernel.handleRestart}
         onRunAll={notebookHook.handleRunAllCells} onRunAbove={notebookHook.handleRunAbove}
@@ -434,6 +481,7 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
         onExportPython={fileOps.handleExportPython} onUndo={versionControl.handleUndo}
         onOpen={fileOps.handleOpen} onSave={fileOps.handleSave}
         onVariableInspectorToggle={() => setVariableInspectorOpen(!variableInspectorOpen)}
+        onPackageInspectorToggle={() => setPackageInspectorOpen(!packageInspectorOpen)}
         onThemeToggle={theme.handleThemeToggle} onSettingsOpen={() => settingsHook.setSettingsOpen(true)}
         getThemeIcon={theme.getThemeIcon} getThemeLabel={theme.getThemeLabel}
       />
@@ -451,6 +499,9 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
         packageInstallError={notebookHook.packageInstallError} globalError={globalError}
         onDismissError={() => setGlobalError(null)} variableInspectorOpen={variableInspectorOpen}
         onVariableInspectorClose={() => setVariableInspectorOpen(false)} onRefreshVariables={handleRefreshVariables}
+        packageInspectorOpen={packageInspectorOpen}
+        onPackageInspectorClose={() => setPackageInspectorOpen(false)} onRefreshPackages={handleRefreshPackages}
+        onInstallPackage={handleInstallPackage} onUninstallPackage={handleUninstallPackage}
         findReplaceOpen={findReplace.findReplaceOpen} onFindReplaceClose={() => findReplace.setFindReplaceOpen(false)}
         onSearch={findReplace.handleSearch} onReplace={findReplace.handleReplace}
         onReplaceAll={findReplace.handleReplaceAll} onNavigate={(cellId) => notebookHook.setActiveCellId(cellId)}

@@ -51,6 +51,13 @@ contextBridge.exposeInMainWorld('promptbook', {
     getVariables: () => ipcRenderer.invoke('kernel:getVariables'),
     getSymbols: () => ipcRenderer.invoke('kernel:getSymbols'),
 
+    // Package management
+    listPackages: () => ipcRenderer.invoke('kernel:listPackages'),
+    installPackage: (packageName: string) =>
+      ipcRenderer.invoke('kernel:installPackage', packageName),
+    uninstallPackage: (packageName: string) =>
+      ipcRenderer.invoke('kernel:uninstallPackage', packageName),
+
     // Event listeners
     onOutput: (callback: (output: KernelOutput, msgId: string) => void) => {
       const handler = (_event: IpcRendererEvent, output: KernelOutput, msgId: string) =>

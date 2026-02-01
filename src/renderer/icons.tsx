@@ -87,4 +87,11 @@ export const Icons = {
       <path d="M5 15h6M8 12v3" />
     </svg>
   ),
+  package: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M8 1L2 4v8l6 3 6-3V4L8 1z" />
+      <path d="M2 4l6 3 6-3" />
+      <path d="M8 7v8" />
+    </svg>
+  ),
 };

@@ -71,6 +71,21 @@ declare global {
           symbols: KernelSymbol[];
           error?: string;
         }>;
+        listPackages: () => Promise<{
+          success: boolean;
+          packages: { name: string; version: string }[];
+          error?: string;
+        }>;
+        installPackage: (packageName: string) => Promise<{
+          success: boolean;
+          output?: string;
+          error?: string;
+        }>;
+        uninstallPackage: (packageName: string) => Promise<{
+          success: boolean;
+          output?: string;
+          error?: string;
+        }>;
         onOutput: (callback: (output: KernelOutput, msgId: string) => void) => () => void;
         onStateChange: (callback: (state: KernelState) => void) => () => void;
         onError: (callback: (error: string) => void) => () => void;

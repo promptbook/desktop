@@ -97,6 +97,18 @@ function registerExecutionHandlers(): void {
   ipcMain.handle('kernel:getSymbols', async () => {
     return kernelService.getSymbols();
   });
+
+  ipcMain.handle('kernel:listPackages', async () => {
+    return kernelService.listPackages();
+  });
+
+  ipcMain.handle('kernel:installPackage', async (_event, packageName: string) => {
+    return kernelService.installPackage(packageName);
+  });
+
+  ipcMain.handle('kernel:uninstallPackage', async (_event, packageName: string) => {
+    return kernelService.uninstallPackage(packageName);
+  });
 }
 
 // Register environment selection handler
