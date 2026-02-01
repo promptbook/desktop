@@ -325,11 +325,18 @@ function useFileLoadEffect(
 // Utility Handlers
 // ============================================================================
 
-async function listFilesHelper(dirPath?: string) {
-  const result = await window.promptbook.file.listDir(dirPath);
+async function listFilesHelper(projectId: string | undefined, relativePath?: string) {
+  if (!projectId) {
+    return { files: [], cwd: '' };
+  }
+  const result = await window.promptbook.project.listFiles(projectId, relativePath);
   if (result.success) {
     return {
-      files: result.files.map((f) => ({ name: f.name, path: f.path, isDirectory: f.isDirectory })),
+      files: result.files.map((f: { name: string; path: string; isDirectory: boolean }) => ({
+        name: f.name,
+        path: f.path,
+        isDirectory: f.isDirectory,
+      })),
       cwd: result.cwd,
     };
   }
@@ -408,7 +415,10 @@ export function useNotebook(
     ),
     [getNotebook, packageInstallModal]
   );
-  const listFiles = useCallback(listFilesHelper, []);
+  const listFiles = useCallback(
+    (relativePath?: string) => listFilesHelper(projectId, relativePath),
+    [projectId]
+  );
 
   // Get notebook-level symbols for # autocomplete (from LLM code generation)
   const notebookSymbols = notebook.metadata?.symbols || [];

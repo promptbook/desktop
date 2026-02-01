@@ -8,10 +8,18 @@ import { testEventService } from '../services/TestEventService';
 function registerFileHandlers(): void {
   ipcMain.handle('project:listFiles', async (_event, projectId: string, relativePath?: string) => {
     try {
+      const project = projectService.getProject(projectId);
+      if (!project) {
+        return { success: false, error: 'Project not found', files: [], cwd: '' };
+      }
       const files = await projectService.listFiles(projectId, relativePath);
-      return { success: true, files };
+      // Return cwd as the absolute path being listed (project path + relative path)
+      const cwd = relativePath
+        ? require('path').join(project.path, relativePath)
+        : project.path;
+      return { success: true, files, cwd };
     } catch (err) {
-      return { success: false, error: String(err), files: [] };
+      return { success: false, error: String(err), files: [], cwd: '' };
     }
   });
 
