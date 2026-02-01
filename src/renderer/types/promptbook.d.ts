@@ -146,6 +146,10 @@ interface PromptbookAPI {
     resizeSidebar: (projectId: string, width: number) => Promise<{ success: boolean; session?: SessionState; error?: string }>;
     cleanupDeletedFiles: (projectId: string, existingFiles: string[]) => Promise<{ success: boolean; session?: SessionState; error?: string }>;
   };
+  test: {
+    onEvent: (callback: (eventName: string, data: unknown) => void) => () => void;
+    isTestMode: () => boolean;
+  };
 }
 
 declare global {

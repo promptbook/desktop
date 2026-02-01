@@ -40,7 +40,7 @@ export function EditorSettings({ defaultTab, onDefaultTabChange }: EditorSetting
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                     <path d="M2 4h12M4 7h10M6 10h8M4 13h10" />
                   </svg>
-                  <span>Pseudo</span>
+                  <span>Detailed</span>
                 </>
               )}
               {tab === 'code' && (
