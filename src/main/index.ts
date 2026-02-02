@@ -1,5 +1,6 @@
 import { app, BrowserWindow, session } from 'electron';
 import * as path from 'path';
+import * as fs from 'fs';
 
 // Fix PATH for Electron launched from GUI (doesn't inherit shell PATH)
 // Ensure common binary directories are available for Claude CLI
@@ -16,6 +17,37 @@ const missingPaths = pathAdditions.filter(p => !currentPath.includes(p));
 if (missingPaths.length > 0) {
   process.env.PATH = [...missingPaths, currentPath].join(':');
 }
+
+// Load environment variables from .claude/settings.json
+// This is needed for Claude Agent SDK to use Bedrock
+function loadClaudeSettings() {
+  const settingsPaths = [
+    path.join(process.cwd(), '.claude', 'settings.json'),
+    path.join(app.getAppPath(), '.claude', 'settings.json'),
+    process.env.HOME ? path.join(process.env.HOME, 'projects', 'work', 'promptbook', '.claude', 'settings.json') : '',
+  ].filter(Boolean);
+
+  for (const settingsPath of settingsPaths) {
+    try {
+      if (fs.existsSync(settingsPath)) {
+        const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+        if (settings.env) {
+          for (const [key, value] of Object.entries(settings.env)) {
+            if (typeof value === 'string' && !process.env[key]) {
+              process.env[key] = value;
+              console.log(`[Claude Settings] Set ${key} from ${settingsPath}`);
+            }
+          }
+        }
+        break; // Found and loaded settings, stop searching
+      }
+    } catch (err) {
+      console.error(`[Claude Settings] Error loading ${settingsPath}:`, err);
+    }
+  }
+}
+
+loadClaudeSettings();
 
 // Electron plugins
 import log from 'electron-log/main';
