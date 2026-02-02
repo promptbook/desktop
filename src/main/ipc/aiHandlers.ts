@@ -101,9 +101,16 @@ export function registerAiHandlers(getCurrentSettings: () => { ai?: AiSettings }
       // Get the browser window to send events
       const webContents = event.sender;
 
+      // Get AI settings for API key
+      const aiSettings = getCurrentSettings().ai;
+      const syncOptions: { apiKey?: string; model?: string } = {};
+      if (aiSettings?.claudeApiKey) {
+        syncOptions.apiKey = aiSettings.claudeApiKey;
+      }
       console.log('[ai:syncStream] Running orchestrator...');
+
       // Run the orchestrator and stream chunks to renderer
-      for await (const chunk of runSyncOrchestrator(sourceType, sourceContent, context)) {
+      for await (const chunk of runSyncOrchestrator(sourceType, sourceContent, context, syncOptions)) {
         console.log('[ai:syncStream] Got chunk:', chunk.type);
         // Send streaming event to renderer
         webContents.send('ai:syncStreamEvent', { cellId, ...chunk });
