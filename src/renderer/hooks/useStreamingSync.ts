@@ -42,6 +42,9 @@ export function useStreamingSync({
   const [syncingCells, setSyncingCells] = useState<Set<string>>(new Set());
   const cancelledRef = useRef<Set<string>>(new Set());
   const cleanupRef = useRef<(() => void) | null>(null);
+  // Track accumulated streaming content per cell
+  const streamingContentRef = useRef<Map<string, string>>(new Map());
+  const streamingThinkingRef = useRef<Map<string, string>>(new Map());
 
   // Clean up listener on unmount
   useEffect(() => {
@@ -71,12 +74,16 @@ export function useStreamingSync({
       console.log('[StreamingSync] Starting sync for cell:', cellId, 'sourceType:', sourceType, 'waitForCompletion:', options?.waitForCompletion);
       console.log('[StreamingSync] Source content length:', sourceContent?.length);
 
-      // Mark cell as syncing
+      // Mark cell as syncing and clear previous streaming content
       setSyncingCells((prev) => new Set(prev).add(cellId));
+      streamingContentRef.current.delete(cellId);
+      streamingThinkingRef.current.delete(cellId);
       handleUpdate(cellId, {
         isSyncing: true,
         syncStartTime: Date.now(),
         backgroundSyncError: undefined,
+        streamingContent: undefined,
+        streamingThinking: undefined,
       });
 
       // If waiting for completion, create a promise that resolves when done
@@ -103,10 +110,30 @@ export function useStreamingSync({
             return;
           }
 
-          if (event.type === 'content' || event.type === 'thinking') {
-            console.log('[StreamingSync] Content/thinking chunk received, length:', event.content?.length);
-            // Could update streaming content display here
-            // For now, just let the UI show the syncing indicator
+          if (event.type === 'content' && event.content) {
+            // Accumulate streaming content
+            const current = streamingContentRef.current.get(cellId) || '';
+            const newContent = current + event.content;
+            streamingContentRef.current.set(cellId, newContent);
+
+            // Update cell state with streaming content
+            handleUpdate(cellId, {
+              streamingContent: newContent,
+            });
+            console.log('[StreamingSync] Content chunk received, total length:', newContent.length);
+          }
+
+          if (event.type === 'thinking' && event.content) {
+            // Accumulate thinking content
+            const current = streamingThinkingRef.current.get(cellId) || '';
+            const newThinking = current + event.content;
+            streamingThinkingRef.current.set(cellId, newThinking);
+
+            // Update cell state with thinking content
+            handleUpdate(cellId, {
+              streamingThinking: newThinking,
+            });
+            console.log('[StreamingSync] Thinking chunk received, total length:', newThinking.length);
           }
 
           if (event.type === 'complete' && event.result) {
@@ -123,7 +150,13 @@ export function useStreamingSync({
                 syncStartTime: undefined,
                 isDirty: false,
                 lastBackgroundSyncTimestamp: Date.now(),
+                streamingContent: undefined,
+                streamingThinking: undefined,
               };
+
+              // Clean up streaming refs
+              streamingContentRef.current.delete(cellId);
+              streamingThinkingRef.current.delete(cellId);
 
               // Update all three tabs with aligned content
               // But if source was code, keep the user's code intact
