@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain } from 'electron';
 import {
   type AiSyncContext,
   type SyncDirection,
@@ -7,10 +7,10 @@ import {
   buildSuggestNextStepsPrompt,
   buildDebugErrorPrompt,
   buildExtractKeywordsPrompt,
-  runSyncOrchestrator,
+  buildOrchestratorPrompt,
+  parseOrchestratorResponse,
   type ContentType,
   type SyncContext,
-  type StreamChunk,
 } from '@promptbook/core/sync';
 import type { AiSettings, AiSyncResult, CellContext } from '@promptbook/core';
 import { testEventService } from '../services/TestEventService';
@@ -70,7 +70,7 @@ export function registerAiHandlers(getCurrentSettings: () => { ai?: AiSettings }
     }
   });
 
-  // Streaming sync using orchestrator (new architecture)
+  // Streaming sync using Claude Agent SDK
   ipcMain.handle('ai:syncStream', async (event, params: {
     cellId: string;
     sourceType: ContentType;
@@ -101,26 +101,76 @@ export function registerAiHandlers(getCurrentSettings: () => { ai?: AiSettings }
       // Get the browser window to send events
       const webContents = event.sender;
 
-      // Get AI settings for API key
-      const aiSettings = getCurrentSettings().ai;
-      const syncOptions: { apiKey?: string; model?: string } = {};
-      if (aiSettings?.claudeApiKey) {
-        syncOptions.apiKey = aiSettings.claudeApiKey;
-      }
-      console.log('[ai:syncStream] Running orchestrator...');
+      // Build the prompt using the core library
+      const prompt = buildOrchestratorPrompt(sourceType, sourceContent, context);
+      console.log('[ai:syncStream] Built prompt, length:', prompt.length);
 
-      // Run the orchestrator and stream chunks to renderer
-      for await (const chunk of runSyncOrchestrator(sourceType, sourceContent, context, syncOptions)) {
-        console.log('[ai:syncStream] Got chunk:', chunk.type);
-        // Send streaming event to renderer
-        webContents.send('ai:syncStreamEvent', { cellId, ...chunk });
+      // Send thinking event
+      webContents.send('ai:syncStreamEvent', { cellId, type: 'thinking', content: 'Starting sync...' });
 
-        // If complete or error, we're done
-        if (chunk.type === 'complete' || chunk.type === 'error') {
-          console.log('[ai:syncStream] Sync finished with:', chunk.type);
-          break;
+      // Dynamic import of claude-agent-sdk (ESM module)
+      console.log('[ai:syncStream] Importing Claude Agent SDK...');
+      const { query } = await import('@anthropic-ai/claude-agent-sdk');
+
+      console.log('[ai:syncStream] Calling Claude Agent SDK query...');
+      let result = '';
+
+      // Use the Claude Agent SDK query function
+      // It handles Bedrock auth via .claude/settings.json when CLAUDE_CODE_USE_BEDROCK=1
+      for await (const message of query({
+        prompt,
+        options: {
+          // No tools needed - just text generation
+          tools: [],
+          // Bypass permissions since we're not using any tools
+          permissionMode: 'bypassPermissions',
+          // Limit to a single turn
+          maxTurns: 1,
+          // Don't persist the session
+          persistSession: false,
+        },
+      })) {
+        console.log('[ai:syncStream] Received message type:', message.type);
+
+        // Yield content chunks for streaming (assistant messages contain partial content)
+        if (message.type === 'assistant' && 'message' in message) {
+          const assistantMessage = message as { type: 'assistant'; message: { content: unknown[] } };
+          for (const block of assistantMessage.message.content) {
+            if (typeof block === 'object' && block !== null && 'text' in block) {
+              const text = (block as { text: string }).text;
+              webContents.send('ai:syncStreamEvent', { cellId, type: 'content', content: text });
+            }
+          }
+        }
+
+        // Collect the final result
+        if (message.type === 'result') {
+          result = (message as { type: 'result'; result: string }).result;
+          console.log('[ai:syncStream] Got result, length:', result.length);
         }
       }
+
+      console.log('[ai:syncStream] Query complete, result length:', result.length);
+
+      if (!result) {
+        throw new Error('No result from Claude Agent SDK');
+      }
+
+      // Parse the response using the core library
+      const alignedResults = parseOrchestratorResponse(result);
+      console.log('[ai:syncStream] Parsed results successfully');
+
+      // Send complete event
+      webContents.send('ai:syncStreamEvent', {
+        cellId,
+        type: 'complete',
+        result: {
+          content: JSON.stringify(alignedResults),
+          parameters: alignedResults.unifiedParameters,
+          symbolMentions: [],
+          rawResponse: result,
+        },
+      });
 
       console.log('[ai:syncStream] Returning success');
       return { success: true };
