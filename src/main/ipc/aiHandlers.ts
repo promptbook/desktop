@@ -132,17 +132,25 @@ export function registerAiHandlers(getCurrentSettings: () => { ai?: AiSettings }
           maxTurns: 1,
           // Don't persist the session
           persistSession: false,
+          // Enable streaming events
+          includePartialMessages: true,
         },
       })) {
         console.log('[ai:syncStream] Received message type:', message.type);
 
-        // Yield content chunks for streaming (assistant messages contain partial content)
-        if (message.type === 'assistant' && 'message' in message) {
-          const assistantMessage = message as { type: 'assistant'; message: { content: unknown[] } };
-          for (const block of assistantMessage.message.content) {
-            if (typeof block === 'object' && block !== null && 'text' in block) {
-              const text = (block as { text: string }).text;
-              webContents.send('ai:syncStreamEvent', { cellId, type: 'content', content: text });
+        // Handle streaming events (partial messages)
+        if (message.type === 'stream_event' && 'event' in message) {
+          const streamEvent = message as { type: 'stream_event'; event: { type: string; delta?: { type: string; text?: string; thinking?: string } } };
+          const event = streamEvent.event;
+
+          // Handle text delta events
+          if (event.type === 'content_block_delta' && event.delta) {
+            if (event.delta.type === 'text_delta' && event.delta.text) {
+              webContents.send('ai:syncStreamEvent', { cellId, type: 'content', content: event.delta.text });
+            }
+            // Handle thinking delta events (extended thinking)
+            if (event.delta.type === 'thinking_delta' && event.delta.thinking) {
+              webContents.send('ai:syncStreamEvent', { cellId, type: 'thinking', content: event.delta.thinking });
             }
           }
         }
