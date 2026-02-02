@@ -110,9 +110,13 @@ export function registerAiHandlers(getCurrentSettings: () => { ai?: AiSettings }
 
       // Dynamic import of claude-agent-sdk (ESM module)
       console.log('[ai:syncStream] Importing Claude Agent SDK...');
+      console.log('[ai:syncStream] PATH:', process.env.PATH);
+      console.log('[ai:syncStream] CLAUDE_CODE_USE_BEDROCK:', process.env.CLAUDE_CODE_USE_BEDROCK);
+
       const { query } = await import('@anthropic-ai/claude-agent-sdk');
 
       console.log('[ai:syncStream] Calling Claude Agent SDK query...');
+      console.log('[ai:syncStream] Working directory:', process.cwd());
       let result = '';
 
       // Use the Claude Agent SDK query function

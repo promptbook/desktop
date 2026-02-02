@@ -1,6 +1,22 @@
 import { app, BrowserWindow, session } from 'electron';
 import * as path from 'path';
 
+// Fix PATH for Electron launched from GUI (doesn't inherit shell PATH)
+// Ensure common binary directories are available for Claude CLI
+const pathAdditions = [
+  '/opt/homebrew/bin',
+  '/usr/local/bin',
+  '/usr/bin',
+  '/bin',
+  process.env.HOME ? `${process.env.HOME}/.local/bin` : '',
+].filter(Boolean);
+
+const currentPath = process.env.PATH || '';
+const missingPaths = pathAdditions.filter(p => !currentPath.includes(p));
+if (missingPaths.length > 0) {
+  process.env.PATH = [...missingPaths, currentPath].join(':');
+}
+
 // Electron plugins
 import log from 'electron-log/main';
 import Store from 'electron-store';
