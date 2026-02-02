@@ -203,7 +203,7 @@ export function useCellExecution({
         .map((c) => ({ shortDescription: c.shortDescription || '', code: c.code || '' }));
 
       const lastEdited = cell.lastEditedTab || 'short';
-      handleUpdate(cellId, { isSyncing: true });
+      handleUpdate(cellId, { isSyncing: true, syncStartTime: Date.now() });
 
       try {
         if (lastEdited === 'code') {
@@ -235,7 +235,7 @@ async function syncCellWithAI(
   onError: (error: string) => void,
   setNotebook: React.Dispatch<React.SetStateAction<NotebookState>>
 ): Promise<CellState | null> {
-  handleUpdate(cellId, { isSyncing: true });
+  handleUpdate(cellId, { isSyncing: true, syncStartTime: Date.now() });
   try {
     const description = cell.pseudoCode?.trim() || cell.shortDescription?.trim();
     const syncResult = await window.promptbook.ai.sync(cellId, 'pseudoToCode', {
@@ -278,7 +278,7 @@ async function syncCellWithAI(
         lastSyncedPseudo: newFull,
         lastSyncedParams: syncedParams,
         isDirty: false,
-        isSyncing: false,
+        isSyncing: false, syncStartTime: undefined,
       });
       handleSaveVersion(`AI sync: ${newShort.slice(0, 50)}`);
       return { ...cell, code: generatedCode, shortDescription: newShort, pseudoCode: newFull };
@@ -305,7 +305,7 @@ async function generateCodeFromDescription(
   onError: (error: string) => void,
   setNotebook: React.Dispatch<React.SetStateAction<NotebookState>>
 ): Promise<CellState | null> {
-  handleUpdate(cellId, { isSyncing: true });
+  handleUpdate(cellId, { isSyncing: true, syncStartTime: Date.now() });
   try {
     const description = cell.pseudoCode?.trim() || cell.shortDescription?.trim();
     const syncResult = await window.promptbook.ai.sync(cellId, 'pseudoToCode', {
@@ -347,7 +347,7 @@ async function generateCodeFromDescription(
         lastSyncedPseudo: newFull,
         lastSyncedParams: syncedParams,
         isDirty: false,
-        isSyncing: false,
+        isSyncing: false, syncStartTime: undefined,
       });
       handleSaveVersion(`AI sync: ${newShort.slice(0, 50)}`);
       return { ...cell, code: generatedCode, shortDescription: newShort, pseudoCode: newFull };
@@ -486,7 +486,7 @@ async function syncFromCode(
     lastSyncedShort: shortResult.success ? shortResult.result : cell.lastSyncedShort,
     lastSyncedPseudo: fullResult.success ? fullResult.result : cell.lastSyncedPseudo,
     isDirty: false,
-    isSyncing: false,
+    isSyncing: false, syncStartTime: undefined,
   });
 }
 
@@ -531,7 +531,7 @@ async function syncFromShort(
     lastSyncedCode: codeResult.success ? codeResult.result : cell.lastSyncedCode,
     lastSyncedPseudo: fullResult.success ? fullResult.result : cell.lastSyncedPseudo,
     isDirty: false,
-    isSyncing: false,
+    isSyncing: false, syncStartTime: undefined,
   });
 }
 
@@ -576,6 +576,6 @@ async function syncFromPseudo(
     lastSyncedCode: codeResult.success ? codeResult.result : cell.lastSyncedCode,
     lastSyncedShort: shortResult.success ? shortResult.result : cell.lastSyncedShort,
     isDirty: false,
-    isSyncing: false,
+    isSyncing: false, syncStartTime: undefined,
   });
 }

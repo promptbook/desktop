@@ -73,6 +73,7 @@ export function useBackgroundSync({
       handleUpdate(cellId, {
         isSyncingInBackground: true,
         backgroundSyncError: undefined,
+        backgroundSyncStartTime: Date.now(),
       });
     },
     [handleUpdate]
@@ -162,6 +163,7 @@ export function useBackgroundSync({
         const updates: Partial<CellState> = {
           isSyncingInBackground: false,
           backgroundSyncError: undefined,
+          backgroundSyncStartTime: undefined,
           lastBackgroundSyncTimestamp: Date.now(),
           isDirty: false,
         };
@@ -207,6 +209,7 @@ export function useBackgroundSync({
         handleUpdate(task.cellId, {
           isSyncingInBackground: false,
           backgroundSyncError: String(error),
+          backgroundSyncStartTime: undefined,
         });
       }
 
