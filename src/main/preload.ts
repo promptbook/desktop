@@ -91,6 +91,37 @@ contextBridge.exposeInMainWorld('promptbook', {
         existingCounterpart?: string;
       }
     ) => ipcRenderer.invoke('ai:sync', cellId, direction, context),
+    // New streaming sync with orchestrator
+    syncStream: (params: {
+      cellId: string;
+      sourceType: 'instructions' | 'detailed' | 'code';
+      sourceContent: string;
+      cellsBefore: Array<{ shortDescription: string; code: string }>;
+      cellsAfter: Array<{ shortDescription: string; code: string }>;
+      existingParameters: Record<string, string>;
+      notebookSymbols?: string[];
+      existingInstructions?: string;
+      existingDetailed?: string;
+      existingCode?: string;
+    }) => ipcRenderer.invoke('ai:syncStream', params),
+    onSyncStreamEvent: (callback: (event: {
+      cellId: string;
+      type: 'content' | 'thinking' | 'complete' | 'error';
+      content?: string;
+      result?: {
+        content: string;
+        parameters: Record<string, string>;
+        symbolMentions: string[];
+      };
+      error?: string;
+    }) => void) => {
+      const handler = (_event: IpcRendererEvent, data: unknown) => callback(data as Parameters<typeof callback>[0]);
+      ipcRenderer.on('ai:syncStreamEvent', handler);
+      return () => ipcRenderer.removeListener('ai:syncStreamEvent', handler);
+    },
+    removeSyncStreamListener: () => {
+      ipcRenderer.removeAllListeners('ai:syncStreamEvent');
+    },
     explainOutput: (output: string, code: string) =>
       ipcRenderer.invoke('ai:explainOutput', output, code),
     suggestNextSteps: (output: string, code: string, description: string) =>

@@ -17,6 +17,7 @@ import {
 import { useCellExecution } from './useCellExecution';
 import type { PackageInstallModalState } from './useCellExecution';
 import { useBackgroundSync } from './useBackgroundSync';
+import { useStreamingSync } from './useStreamingSync';
 
 export type InstallAction = 'once' | 'current-cell' | 'setup-cell';
 
@@ -406,11 +407,14 @@ export function useNotebook(
     }));
   }, []);
 
-  // Background sync for immediate code execution
+  // Background sync for immediate code execution (legacy)
   const backgroundSync = useBackgroundSync({ handleUpdate, setNotebook });
 
+  // New streaming sync with orchestrator
+  const streamingSync = useStreamingSync({ handleUpdate });
+
   const { handleRunCell, handleSyncCell } = useCellExecution({
-    notebook, setNotebook, handleUpdate, handleSaveVersion, onError, setEnvironmentPickerOpen, setPackageInstallModal, setPackageInstallError, backgroundSync,
+    notebook, setNotebook, handleUpdate, handleSaveVersion, onError, setEnvironmentPickerOpen, setPackageInstallModal, setPackageInstallError, backgroundSync, streamingSync,
   });
 
   const cellOps = createCellOperations({ setNotebook, defaultTab, getActiveCellId, setActiveCellId });

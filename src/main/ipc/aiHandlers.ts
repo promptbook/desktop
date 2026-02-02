@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import {
   type AiSyncContext,
   type SyncDirection,
@@ -7,8 +7,12 @@ import {
   buildSuggestNextStepsPrompt,
   buildDebugErrorPrompt,
   buildExtractKeywordsPrompt,
+  runSyncOrchestrator,
+  type ContentType,
+  type SyncContext,
+  type StreamChunk,
 } from '@promptbook/core/sync';
-import type { AiSettings, AiSyncResult } from '@promptbook/core';
+import type { AiSettings, AiSyncResult, CellContext } from '@promptbook/core';
 import { testEventService } from '../services/TestEventService';
 import { searchPapers, type Paper } from '../services/PaperSearchService';
 
@@ -63,6 +67,59 @@ export function registerAiHandlers(getCurrentSettings: () => { ai?: AiSettings }
       });
 
       return { success: false, error: `AI Error: ${errorMessage}` };
+    }
+  });
+
+  // Streaming sync using orchestrator (new architecture)
+  ipcMain.handle('ai:syncStream', async (event, params: {
+    cellId: string;
+    sourceType: ContentType;
+    sourceContent: string;
+    cellsBefore: CellContext[];
+    cellsAfter: CellContext[];
+    existingParameters: Record<string, string>;
+    notebookSymbols?: string[];
+    existingInstructions?: string;
+    existingDetailed?: string;
+    existingCode?: string;
+  }): Promise<{ success: boolean; error?: string }> => {
+    const { cellId, sourceType, sourceContent, ...contextParams } = params;
+
+    const context: SyncContext = {
+      cellsBefore: contextParams.cellsBefore || [],
+      cellsAfter: contextParams.cellsAfter || [],
+      existingParameters: contextParams.existingParameters || {},
+      notebookSymbols: contextParams.notebookSymbols,
+      existingInstructions: contextParams.existingInstructions,
+      existingDetailed: contextParams.existingDetailed,
+      existingCode: contextParams.existingCode,
+    };
+
+    try {
+      // Get the browser window to send events
+      const webContents = event.sender;
+
+      // Run the orchestrator and stream chunks to renderer
+      for await (const chunk of runSyncOrchestrator(sourceType, sourceContent, context)) {
+        // Send streaming event to renderer
+        webContents.send('ai:syncStreamEvent', { cellId, ...chunk });
+
+        // If complete or error, we're done
+        if (chunk.type === 'complete' || chunk.type === 'error') {
+          break;
+        }
+      }
+
+      return { success: true };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      // Send error event
+      event.sender.send('ai:syncStreamEvent', {
+        cellId,
+        type: 'error',
+        error: errorMessage,
+      });
+      return { success: false, error: errorMessage };
     }
   });
 

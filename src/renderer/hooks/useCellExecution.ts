@@ -13,6 +13,7 @@ import {
   applyParamChangesToDescription,
 } from '../utils/paramUtils';
 import type { UseBackgroundSyncReturn } from './useBackgroundSync';
+import type { UseStreamingSyncReturn } from './useStreamingSync';
 
 export interface PackageInstallModalState {
   isOpen: boolean;
@@ -30,6 +31,7 @@ interface UseCellExecutionParams {
   setPackageInstallModal: React.Dispatch<React.SetStateAction<PackageInstallModalState>>;
   setPackageInstallError: (error: string | null) => void;
   backgroundSync?: UseBackgroundSyncReturn;
+  streamingSync?: UseStreamingSyncReturn;
 }
 
 /** Helper to update notebook symbols from LLM response */
@@ -58,6 +60,7 @@ export function useCellExecution({
   setPackageInstallModal,
   setPackageInstallError,
   backgroundSync,
+  streamingSync,
 }: UseCellExecutionParams) {
   const handleRunCell = useCallback(
     async (cellId: string) => {
@@ -121,21 +124,44 @@ export function useCellExecution({
       }
 
       // FEATURE 1: If user edited CODE tab, run immediately and sync in background
-      if (cell.isDirty && lastEditedTab === 'code' && hasCode && backgroundSync) {
+      if (cell.isDirty && lastEditedTab === 'code' && hasCode) {
         // Execute immediately without waiting for sync
         await executeCode(cellId, cell, handleUpdate, setEnvironmentPickerOpen, setPackageInstallModal, setPackageInstallError);
 
-        // Queue background sync to regenerate Instructions and Detailed tabs
-        // Pass previous code and existing descriptions so LLM can see the diff and update appropriately
-        backgroundSync.queueSync(
-          cellId,
-          cell.code,
-          cellsBefore,
-          cellsAfter,
-          cell.lastSyncedCode,      // Previous code for diff comparison
-          cell.shortDescription,    // Existing short description to update
-          cell.pseudoCode           // Existing detailed instructions to update
-        );
+        // Use streaming sync if available, otherwise fall back to background sync
+        if (streamingSync) {
+          // Extract existing parameters
+          const existingParameters = {
+            ...extractParams(cell.shortDescription || ''),
+            ...extractParams(cell.pseudoCode || ''),
+          };
+
+          // Start streaming sync in background (code is preserved, only generates instructions/detailed)
+          streamingSync.startStreamingSync(
+            cellId,
+            'code',
+            cell.code,
+            cellsBefore,
+            cellsAfter,
+            existingParameters,
+            {
+              existingInstructions: cell.shortDescription,
+              existingDetailed: cell.pseudoCode,
+              existingCode: cell.code,
+            }
+          );
+        } else if (backgroundSync) {
+          // Legacy: Queue background sync to regenerate Instructions and Detailed tabs
+          backgroundSync.queueSync(
+            cellId,
+            cell.code,
+            cellsBefore,
+            cellsAfter,
+            cell.lastSyncedCode,
+            cell.shortDescription,
+            cell.pseudoCode
+          );
+        }
         return;
       }
 
@@ -154,7 +180,7 @@ export function useCellExecution({
       // Execute the code
       await executeCode(cellId, cell, handleUpdate, setEnvironmentPickerOpen, setPackageInstallModal, setPackageInstallError);
     },
-    [notebook.cells, setNotebook, handleUpdate, handleSaveVersion, onError, setEnvironmentPickerOpen, setPackageInstallModal, setPackageInstallError, backgroundSync]
+    [notebook.cells, setNotebook, handleUpdate, handleSaveVersion, onError, setEnvironmentPickerOpen, setPackageInstallModal, setPackageInstallError, backgroundSync, streamingSync]
   );
 
   const handleSyncCell = useCallback(
@@ -203,6 +229,41 @@ export function useCellExecution({
         .map((c) => ({ shortDescription: c.shortDescription || '', code: c.code || '' }));
 
       const lastEdited = cell.lastEditedTab || 'short';
+
+      // Use new streaming sync if available
+      if (streamingSync) {
+        // Map tab name to source type
+        const sourceType = lastEdited === 'short' ? 'instructions' : lastEdited === 'pseudo' ? 'detailed' : 'code';
+        const sourceContent = lastEdited === 'code' ? cell.code : lastEdited === 'short' ? cell.shortDescription : cell.pseudoCode;
+
+        // Extract existing parameters from all tabs
+        const existingParameters = {
+          ...extractParams(cell.shortDescription || ''),
+          ...extractParams(cell.pseudoCode || ''),
+        };
+
+        // Get kernel symbols if available
+        const kernelSymbolsResult = await window.promptbook.kernel.getSymbols?.().catch(() => ({ symbols: [] }));
+        const notebookSymbols = kernelSymbolsResult?.symbols?.map(s => s.name) || [];
+
+        await streamingSync.startStreamingSync(
+          cellId,
+          sourceType,
+          sourceContent || '',
+          cellsBefore,
+          cellsAfter,
+          existingParameters,
+          {
+            notebookSymbols,
+            existingInstructions: cell.shortDescription,
+            existingDetailed: cell.pseudoCode,
+            existingCode: cell.code,
+          }
+        );
+        return;
+      }
+
+      // Fallback to legacy sync if streaming sync not available
       handleUpdate(cellId, { isSyncing: true, syncStartTime: Date.now() });
 
       try {
@@ -218,7 +279,7 @@ export function useCellExecution({
         onError(String(error));
       }
     },
-    [notebook.cells, handleUpdate, onError, setNotebook]
+    [notebook.cells, handleUpdate, onError, setNotebook, streamingSync]
   );
 
   return { handleRunCell, handleSyncCell };

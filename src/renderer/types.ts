@@ -37,6 +37,42 @@ export interface CellContext {
   code: string;
 }
 
+// Streaming sync types
+export type SyncSourceType = 'instructions' | 'detailed' | 'code';
+
+export interface SyncStreamParams {
+  cellId: string;
+  sourceType: SyncSourceType;
+  sourceContent: string;
+  cellsBefore: CellContext[];
+  cellsAfter: CellContext[];
+  existingParameters: Record<string, string>;
+  notebookSymbols?: string[];
+  existingInstructions?: string;
+  existingDetailed?: string;
+  existingCode?: string;
+}
+
+export interface SyncStreamEvent {
+  cellId: string;
+  type: 'content' | 'thinking' | 'complete' | 'error';
+  content?: string;
+  result?: {
+    content: string;
+    parameters: Record<string, string>;
+    symbolMentions: string[];
+  };
+  error?: string;
+}
+
+export interface AlignedSyncResults {
+  instructions: string;
+  detailed: string;
+  code: string;
+  parameters: Record<string, string>;
+  changes?: string[];
+}
+
 // Type for the preload API
 declare global {
   interface Window {
@@ -116,6 +152,10 @@ declare global {
             proposedSymbols?: string[];
           }
         ) => Promise<{ success: boolean; result?: string; symbols?: GeneratedSymbol[]; notebookSymbols?: GeneratedSymbol[]; error?: string }>;
+        // New streaming sync with orchestrator
+        syncStream: (params: SyncStreamParams) => Promise<{ success: boolean; error?: string }>;
+        onSyncStreamEvent: (callback: (event: SyncStreamEvent) => void) => () => void;
+        removeSyncStreamListener: () => void;
         explainOutput: (output: string, code: string) => Promise<{ success: boolean; result?: string; error?: string }>;
         suggestNextSteps: (output: string, code: string, description: string) => Promise<{ success: boolean; result?: string; error?: string }>;
         debugError: (error: string, code: string) => Promise<{ success: boolean; result?: string; error?: string }>;
