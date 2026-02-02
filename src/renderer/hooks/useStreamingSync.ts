@@ -58,6 +58,9 @@ export function useStreamingSync({
         existingCode?: string;
       }
     ) => {
+      console.log('[StreamingSync] Starting sync for cell:', cellId, 'sourceType:', sourceType);
+      console.log('[StreamingSync] Source content length:', sourceContent?.length);
+
       // Mark cell as syncing
       setSyncingCells((prev) => new Set(prev).add(cellId));
       handleUpdate(cellId, {
@@ -67,26 +70,34 @@ export function useStreamingSync({
       });
 
       // Set up stream listener
+      console.log('[StreamingSync] Setting up stream listener for cell:', cellId);
       const removeListener = window.promptbook.ai.onSyncStreamEvent(
         (event: SyncStreamEvent) => {
+          console.log('[StreamingSync] Received event:', event.type, 'for cell:', event.cellId);
+
           // Only handle events for this cell
           if (event.cellId !== cellId) return;
 
           // Check if cancelled
           if (cancelledRef.current.has(cellId)) {
+            console.log('[StreamingSync] Sync was cancelled for cell:', cellId);
             cancelledRef.current.delete(cellId);
             return;
           }
 
           if (event.type === 'content' || event.type === 'thinking') {
+            console.log('[StreamingSync] Content/thinking chunk received, length:', event.content?.length);
             // Could update streaming content display here
             // For now, just let the UI show the syncing indicator
           }
 
           if (event.type === 'complete' && event.result) {
+            console.log('[StreamingSync] Complete event received');
+            console.log('[StreamingSync] Raw result:', event.result);
             try {
               // Parse the aligned results from the orchestrator
               const results: AlignedSyncResults = JSON.parse(event.result.content);
+              console.log('[StreamingSync] Parsed results:', results);
 
               // Build updates based on source type
               const updates: Partial<CellState> = {
@@ -140,6 +151,7 @@ export function useStreamingSync({
           }
 
           if (event.type === 'error') {
+            console.error('[StreamingSync] Error event received:', event.error);
             handleUpdate(cellId, {
               isSyncing: false,
               syncStartTime: undefined,
@@ -159,8 +171,9 @@ export function useStreamingSync({
       cleanupRef.current = removeListener;
 
       // Start the streaming sync
+      console.log('[StreamingSync] Calling IPC syncStream...');
       try {
-        await window.promptbook.ai.syncStream({
+        const result = await window.promptbook.ai.syncStream({
           cellId,
           sourceType,
           sourceContent,
@@ -172,8 +185,10 @@ export function useStreamingSync({
           existingDetailed: options?.existingDetailed,
           existingCode: options?.existingCode,
         });
+        console.log('[StreamingSync] IPC syncStream returned:', result);
       } catch (error) {
         // IPC call itself failed
+        console.error('[StreamingSync] IPC call failed:', error);
         handleUpdate(cellId, {
           isSyncing: false,
           syncStartTime: undefined,

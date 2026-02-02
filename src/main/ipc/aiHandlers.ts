@@ -84,6 +84,8 @@ export function registerAiHandlers(getCurrentSettings: () => { ai?: AiSettings }
     existingCode?: string;
   }): Promise<{ success: boolean; error?: string }> => {
     const { cellId, sourceType, sourceContent, ...contextParams } = params;
+    console.log('[ai:syncStream] Starting sync for cell:', cellId, 'sourceType:', sourceType);
+    console.log('[ai:syncStream] Source content length:', sourceContent?.length);
 
     const context: SyncContext = {
       cellsBefore: contextParams.cellsBefore || [],
@@ -99,20 +101,25 @@ export function registerAiHandlers(getCurrentSettings: () => { ai?: AiSettings }
       // Get the browser window to send events
       const webContents = event.sender;
 
+      console.log('[ai:syncStream] Running orchestrator...');
       // Run the orchestrator and stream chunks to renderer
       for await (const chunk of runSyncOrchestrator(sourceType, sourceContent, context)) {
+        console.log('[ai:syncStream] Got chunk:', chunk.type);
         // Send streaming event to renderer
         webContents.send('ai:syncStreamEvent', { cellId, ...chunk });
 
         // If complete or error, we're done
         if (chunk.type === 'complete' || chunk.type === 'error') {
+          console.log('[ai:syncStream] Sync finished with:', chunk.type);
           break;
         }
       }
 
+      console.log('[ai:syncStream] Returning success');
       return { success: true };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error('[ai:syncStream] Error:', errorMessage);
       // Send error event
       event.sender.send('ai:syncStreamEvent', {
         cellId,
