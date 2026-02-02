@@ -64,9 +64,11 @@ export function useCellExecution({
 }: UseCellExecutionParams) {
   const handleRunCell = useCallback(
     async (cellId: string) => {
+      console.log('[handleRunCell] Called for cell:', cellId);
       const cellIndex = notebook.cells.findIndex((c) => c.id === cellId);
       let cell = notebook.cells[cellIndex];
       if (!cell || cell.cellType === 'text') return;
+      console.log('[handleRunCell] Cell state:', { isDirty: cell.isDirty, lastEditedTab: cell.lastEditedTab, hasCode: !!cell.code?.trim(), hasDescription: !!(cell.shortDescription?.trim() || cell.pseudoCode?.trim()) });
 
       // Check if we have a kernel
       const status = await window.promptbook.kernel.getStatus();
@@ -165,16 +167,99 @@ export function useCellExecution({
         return;
       }
 
-      // Original behavior for non-code edits: Sync with AI if still dirty
+      // Sync with AI if still dirty (use streaming sync if available)
       if (cell.isDirty && hasDescription) {
-        cell = await syncCellWithAI(cellId, cell, cellsBefore, cellsAfter, handleUpdate, handleSaveVersion, onError, setNotebook);
-        if (!cell) return;
+        if (streamingSync) {
+          console.log('[handleRunCell] Using streaming sync (cell is dirty with description)');
+          const sourceType = lastEditedTab === 'short' ? 'instructions' : lastEditedTab === 'pseudo' ? 'detailed' : 'code';
+          const sourceContent = lastEditedTab === 'code' ? cell.code : lastEditedTab === 'short' ? cell.shortDescription : cell.pseudoCode;
+
+          const existingParameters = {
+            ...extractParams(cell.shortDescription || ''),
+            ...extractParams(cell.pseudoCode || ''),
+          };
+
+          const result = await streamingSync.startStreamingSync(
+            cellId,
+            sourceType as 'instructions' | 'detailed' | 'code',
+            sourceContent || '',
+            cellsBefore,
+            cellsAfter,
+            existingParameters,
+            {
+              existingInstructions: cell.shortDescription,
+              existingDetailed: cell.pseudoCode,
+              existingCode: cell.code,
+              waitForCompletion: true,
+            }
+          );
+
+          if (!result?.success) {
+            console.error('[handleRunCell] Streaming sync failed:', result?.error);
+            onError(result?.error || 'Sync failed');
+            return;
+          }
+
+          // Update cell with results
+          cell = {
+            ...cell,
+            shortDescription: result.instructions || cell.shortDescription,
+            pseudoCode: result.detailed || cell.pseudoCode,
+            code: result.code || cell.code,
+            isDirty: false,
+          };
+        } else {
+          console.log('[handleRunCell] Using legacy syncCellWithAI (streaming sync not available)');
+          cell = await syncCellWithAI(cellId, cell, cellsBefore, cellsAfter, handleUpdate, handleSaveVersion, onError, setNotebook);
+          if (!cell) return;
+        }
       }
 
       // Generate code if only description exists (no code yet)
       if (hasDescription && !hasCode) {
-        cell = await generateCodeFromDescription(cellId, cell, cellsBefore, cellsAfter, handleUpdate, handleSaveVersion, onError, setNotebook);
-        if (!cell) return;
+        if (streamingSync) {
+          console.log('[handleRunCell] Using streaming sync to generate code (has description but no code)');
+          const sourceType = cell.pseudoCode?.trim() ? 'detailed' : 'instructions';
+          const sourceContent = cell.pseudoCode?.trim() || cell.shortDescription || '';
+
+          const existingParameters = {
+            ...extractParams(cell.shortDescription || ''),
+            ...extractParams(cell.pseudoCode || ''),
+          };
+
+          const result = await streamingSync.startStreamingSync(
+            cellId,
+            sourceType,
+            sourceContent,
+            cellsBefore,
+            cellsAfter,
+            existingParameters,
+            {
+              existingInstructions: cell.shortDescription,
+              existingDetailed: cell.pseudoCode,
+              waitForCompletion: true,
+            }
+          );
+
+          if (!result?.success) {
+            console.error('[handleRunCell] Streaming sync failed:', result?.error);
+            onError(result?.error || 'Code generation failed');
+            return;
+          }
+
+          // Update cell with generated code
+          cell = {
+            ...cell,
+            shortDescription: result.instructions || cell.shortDescription,
+            pseudoCode: result.detailed || cell.pseudoCode,
+            code: result.code || '',
+            isDirty: false,
+          };
+        } else {
+          console.log('[handleRunCell] Using legacy generateCodeFromDescription (streaming sync not available)');
+          cell = await generateCodeFromDescription(cellId, cell, cellsBefore, cellsAfter, handleUpdate, handleSaveVersion, onError, setNotebook);
+          if (!cell) return;
+        }
       }
 
       // Execute the code
@@ -185,6 +270,8 @@ export function useCellExecution({
 
   const handleSyncCell = useCallback(
     async (cellId: string) => {
+      console.log('[handleSyncCell] Called for cell:', cellId);
+      console.log('[handleSyncCell] streamingSync available:', !!streamingSync);
       const cellIndex = notebook.cells.findIndex((c) => c.id === cellId);
       const cell = notebook.cells[cellIndex];
       if (!cell || cell.cellType === 'text') return;
@@ -232,9 +319,11 @@ export function useCellExecution({
 
       // Use new streaming sync if available
       if (streamingSync) {
+        console.log('[handleSyncCell] Using streaming sync');
         // Map tab name to source type
         const sourceType = lastEdited === 'short' ? 'instructions' : lastEdited === 'pseudo' ? 'detailed' : 'code';
         const sourceContent = lastEdited === 'code' ? cell.code : lastEdited === 'short' ? cell.shortDescription : cell.pseudoCode;
+        console.log('[handleSyncCell] sourceType:', sourceType, 'sourceContent length:', sourceContent?.length);
 
         // Extract existing parameters from all tabs
         const existingParameters = {
@@ -264,6 +353,7 @@ export function useCellExecution({
       }
 
       // Fallback to legacy sync if streaming sync not available
+      console.log('[handleSyncCell] Falling back to legacy sync (streaming sync not available)');
       handleUpdate(cellId, { isSyncing: true, syncStartTime: Date.now() });
 
       try {

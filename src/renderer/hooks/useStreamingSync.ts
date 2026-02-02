@@ -8,6 +8,14 @@ export interface UseStreamingSyncParams {
   handleUpdate: (cellId: string, updates: Partial<CellState>) => void;
 }
 
+export interface StreamingSyncResult {
+  success: boolean;
+  instructions?: string;
+  detailed?: string;
+  code?: string;
+  error?: string;
+}
+
 export interface UseStreamingSyncReturn {
   startStreamingSync: (
     cellId: string,
@@ -21,8 +29,9 @@ export interface UseStreamingSyncReturn {
       existingInstructions?: string;
       existingDetailed?: string;
       existingCode?: string;
+      waitForCompletion?: boolean;
     }
-  ) => Promise<void>;
+  ) => Promise<StreamingSyncResult | void>;
   cancelSync: (cellId: string) => void;
   isSyncing: (cellId: string) => boolean;
 }
@@ -56,9 +65,10 @@ export function useStreamingSync({
         existingInstructions?: string;
         existingDetailed?: string;
         existingCode?: string;
+        waitForCompletion?: boolean;
       }
-    ) => {
-      console.log('[StreamingSync] Starting sync for cell:', cellId, 'sourceType:', sourceType);
+    ): Promise<StreamingSyncResult | void> => {
+      console.log('[StreamingSync] Starting sync for cell:', cellId, 'sourceType:', sourceType, 'waitForCompletion:', options?.waitForCompletion);
       console.log('[StreamingSync] Source content length:', sourceContent?.length);
 
       // Mark cell as syncing
@@ -68,6 +78,14 @@ export function useStreamingSync({
         syncStartTime: Date.now(),
         backgroundSyncError: undefined,
       });
+
+      // If waiting for completion, create a promise that resolves when done
+      let resolveCompletion: ((result: StreamingSyncResult) => void) | null = null;
+      const completionPromise = options?.waitForCompletion
+        ? new Promise<StreamingSyncResult>((resolve) => {
+            resolveCompletion = resolve;
+          })
+        : null;
 
       // Set up stream listener
       console.log('[StreamingSync] Setting up stream listener for cell:', cellId);
@@ -132,6 +150,16 @@ export function useStreamingSync({
               };
 
               handleUpdate(cellId, updates);
+
+              // Resolve completion promise if waiting
+              if (resolveCompletion) {
+                resolveCompletion({
+                  success: true,
+                  instructions: results.instructions,
+                  detailed: results.detailed,
+                  code: results.code,
+                });
+              }
             } catch (e) {
               console.error('[StreamingSync] Failed to parse results:', e);
               handleUpdate(cellId, {
@@ -139,6 +167,14 @@ export function useStreamingSync({
                 syncStartTime: undefined,
                 backgroundSyncError: `Failed to parse sync results: ${e}`,
               });
+
+              // Resolve with error if waiting
+              if (resolveCompletion) {
+                resolveCompletion({
+                  success: false,
+                  error: `Failed to parse sync results: ${e}`,
+                });
+              }
             }
 
             // Clean up
@@ -157,6 +193,14 @@ export function useStreamingSync({
               syncStartTime: undefined,
               backgroundSyncError: event.error || 'Unknown error during sync',
             });
+
+            // Resolve with error if waiting
+            if (resolveCompletion) {
+              resolveCompletion({
+                success: false,
+                error: event.error || 'Unknown error during sync',
+              });
+            }
 
             setSyncingCells((prev) => {
               const next = new Set(prev);
@@ -200,6 +244,19 @@ export function useStreamingSync({
           return next;
         });
         removeListener();
+
+        // Resolve with error if waiting
+        if (resolveCompletion) {
+          resolveCompletion({
+            success: false,
+            error: `Sync failed: ${error}`,
+          });
+        }
+      }
+
+      // If waiting for completion, return the promise
+      if (completionPromise) {
+        return completionPromise;
       }
     },
     [handleUpdate]
