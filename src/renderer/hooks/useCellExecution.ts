@@ -126,7 +126,16 @@ export function useCellExecution({
         await executeCode(cellId, cell, handleUpdate, setEnvironmentPickerOpen, setPackageInstallModal, setPackageInstallError);
 
         // Queue background sync to regenerate Instructions and Detailed tabs
-        backgroundSync.queueSync(cellId, cell.code, cellsBefore, cellsAfter);
+        // Pass previous code and existing descriptions so LLM can see the diff and update appropriately
+        backgroundSync.queueSync(
+          cellId,
+          cell.code,
+          cellsBefore,
+          cellsAfter,
+          cell.lastSyncedCode,      // Previous code for diff comparison
+          cell.shortDescription,    // Existing short description to update
+          cell.pseudoCode           // Existing detailed instructions to update
+        );
         return;
       }
 

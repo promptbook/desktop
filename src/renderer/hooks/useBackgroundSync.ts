@@ -6,6 +6,9 @@ import { extractParams } from '../utils/paramUtils';
 interface BackgroundSyncTask {
   cellId: string;
   code: string;
+  previousCode?: string;
+  existingShort?: string;
+  existingPseudo?: string;
   cellsBefore: CellContext[];
   cellsAfter: CellContext[];
   timestamp: number;
@@ -16,7 +19,10 @@ export interface UseBackgroundSyncReturn {
     cellId: string,
     code: string,
     cellsBefore: CellContext[],
-    cellsAfter: CellContext[]
+    cellsAfter: CellContext[],
+    previousCode?: string,
+    existingShort?: string,
+    existingPseudo?: string
   ) => void;
   cancelSync: (cellId: string) => void;
   isPending: (cellId: string) => boolean;
@@ -40,7 +46,10 @@ export function useBackgroundSync({
       cellId: string,
       code: string,
       cellsBefore: CellContext[],
-      cellsAfter: CellContext[]
+      cellsAfter: CellContext[],
+      previousCode?: string,
+      existingShort?: string,
+      existingPseudo?: string
     ) => {
       // Remove any existing task for this cell (only keep latest)
       setQueue((prev) => {
@@ -50,6 +59,9 @@ export function useBackgroundSync({
           {
             cellId,
             code,
+            previousCode,
+            existingShort,
+            existingPseudo,
             cellsBefore,
             cellsAfter,
             timestamp: Date.now(),
@@ -99,12 +111,14 @@ export function useBackgroundSync({
       }
 
       try {
-        // Sync code to short description
+        // Sync code to short description (include previous code and existing description for diff-based update)
         const shortResult = await window.promptbook.ai.sync(
           task.cellId,
           'codeToShort',
           {
             newContent: task.code,
+            previousContent: task.previousCode,
+            existingCounterpart: task.existingShort,
             cellsBefore: task.cellsBefore,
             cellsAfter: task.cellsAfter,
           }
@@ -117,12 +131,14 @@ export function useBackgroundSync({
           return;
         }
 
-        // Sync code to detailed instructions
+        // Sync code to detailed instructions (include previous code and existing description for diff-based update)
         const pseudoResult = await window.promptbook.ai.sync(
           task.cellId,
           'codeToPseudo',
           {
             newContent: task.code,
+            previousContent: task.previousCode,
+            existingCounterpart: task.existingPseudo,
             cellsBefore: task.cellsBefore,
             cellsAfter: task.cellsAfter,
           }
