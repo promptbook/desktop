@@ -73,6 +73,28 @@ export interface AlignedSyncResults {
   changes?: string[];
 }
 
+// Generate cells types
+export interface GenerateCellsParams {
+  description: string;
+  fileContents?: Record<string, string>;
+  existingCells?: { shortDescription?: string; code?: string }[];
+}
+
+export interface GeneratedCellData {
+  cellType: 'code' | 'text';
+  instructions?: string;
+  detailed?: string;
+  code?: string;
+  content?: string;
+}
+
+export interface GenerateCellsStreamEvent {
+  type: 'content' | 'complete' | 'error';
+  content?: string;
+  cells?: GeneratedCellData[];
+  error?: string;
+}
+
 // Type for the preload API
 declare global {
   interface Window {
@@ -160,6 +182,10 @@ declare global {
         suggestNextSteps: (output: string, code: string, description: string) => Promise<{ success: boolean; result?: string; error?: string }>;
         debugError: (error: string, code: string) => Promise<{ success: boolean; result?: string; error?: string }>;
         extractKeywords: (output: string, code: string) => Promise<{ success: boolean; keywords?: string[]; error?: string }>;
+        // Generate multiple cells from description
+        generateCells: (params: GenerateCellsParams) => Promise<{ success: boolean; error?: string }>;
+        onGenerateCellsStream: (callback: (event: GenerateCellsStreamEvent) => void) => () => void;
+        removeGenerateCellsListener: () => void;
       };
       papers: {
         search: (keywords: string[]) => Promise<{ success: boolean; papers?: Paper[]; error?: string }>;

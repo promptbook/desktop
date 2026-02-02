@@ -130,6 +130,31 @@ contextBridge.exposeInMainWorld('promptbook', {
       ipcRenderer.invoke('ai:debugError', error, code),
     extractKeywords: (output: string, code: string) =>
       ipcRenderer.invoke('ai:extractKeywords', output, code),
+    // Generate multiple cells from description
+    generateCells: (params: {
+      description: string;
+      fileContents?: Record<string, string>;
+      existingCells?: { shortDescription?: string; code?: string }[];
+    }) => ipcRenderer.invoke('ai:generateCells', params),
+    onGenerateCellsStream: (callback: (event: {
+      type: 'content' | 'complete' | 'error';
+      content?: string;
+      cells?: Array<{
+        cellType: 'code' | 'text';
+        instructions?: string;
+        detailed?: string;
+        code?: string;
+        content?: string;
+      }>;
+      error?: string;
+    }) => void) => {
+      const handler = (_event: IpcRendererEvent, data: unknown) => callback(data as Parameters<typeof callback>[0]);
+      ipcRenderer.on('ai:generateCellsStream', handler);
+      return () => ipcRenderer.removeListener('ai:generateCellsStream', handler);
+    },
+    removeGenerateCellsListener: () => {
+      ipcRenderer.removeAllListeners('ai:generateCellsStream');
+    },
   },
   file: {
     open: () => ipcRenderer.invoke('file:open'),

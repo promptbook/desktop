@@ -35,7 +35,6 @@ function loadClaudeSettings() {
           for (const [key, value] of Object.entries(settings.env)) {
             if (typeof value === 'string' && !process.env[key]) {
               process.env[key] = value;
-              console.log(`[Claude Settings] Set ${key} from ${settingsPath}`);
             }
           }
         }

@@ -13,6 +13,7 @@ import {
   DataFrameCallbacks,
   ResearchCallbacks,
   Paper,
+  GenerateCellsModal,
 } from '@promptbook/core';
 import type { InstalledPackage } from '@promptbook/core';
 import type { DataFrameMetadata, DataFramePagination } from '@promptbook/core';
@@ -32,6 +33,7 @@ import {
   useSettings,
 } from './hooks';
 import { useAIAssistance } from './hooks/useAIAssistance';
+import { useGenerateCells } from './hooks/useGenerateCells';
 
 // Props for integration with project management (Electron only)
 interface AppProps {
@@ -161,10 +163,11 @@ interface NotebookContentProps {
   aiAssistance: ReturnType<typeof useAIAssistance>;
   dataframeCallbacks: DataFrameCallbacks;
   researchCallbacks: ResearchCallbacks;
+  onOpenGenerateCells: () => void;
 }
 
 // NotebookContent component - main notebook area
-function NotebookContent({ notebookHook, getSymbols, aiAssistance, dataframeCallbacks, researchCallbacks }: NotebookContentProps) {
+function NotebookContent({ notebookHook, getSymbols, aiAssistance, dataframeCallbacks, researchCallbacks, onOpenGenerateCells }: NotebookContentProps) {
   // Transform aiAssistance props to match the expected interface
   const aiAssistanceProps = {
     messages: aiAssistance.messages,
@@ -191,6 +194,7 @@ function NotebookContent({ notebookHook, getSymbols, aiAssistance, dataframeCall
         aiAssistance={aiAssistanceProps}
         dataframeCallbacks={dataframeCallbacks}
         researchCallbacks={researchCallbacks}
+        onOpenGenerateCells={onOpenGenerateCells}
       />
     </main>
   );
@@ -291,6 +295,13 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
 
   // AI Assistance hook
   const aiAssistance = useAIAssistance();
+
+  // Generate cells hook
+  const generateCells = useGenerateCells({
+    notebook: notebookHook.notebook,
+    projectId,
+    setNotebook: notebookHook.setNotebook,
+  });
 
   // Callbacks for kernel operations
   const handleRefreshVariables = useCallback(async (): Promise<Variable[]> => {
@@ -436,7 +447,7 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
         onThemeToggle={theme.handleThemeToggle} onSettingsOpen={() => settingsHook.setSettingsOpen(true)}
         getThemeIcon={theme.getThemeIcon} getThemeLabel={theme.getThemeLabel}
       />
-      <NotebookContent notebookHook={notebookHook} getSymbols={handleGetSymbols} aiAssistance={aiAssistance} dataframeCallbacks={dataframeCallbacks} researchCallbacks={researchCallbacks} />
+      <NotebookContent notebookHook={notebookHook} getSymbols={handleGetSymbols} aiAssistance={aiAssistance} dataframeCallbacks={dataframeCallbacks} researchCallbacks={researchCallbacks} onOpenGenerateCells={generateCells.openModal} />
       <AppModals
         settingsOpen={settingsHook.settingsOpen} onSettingsClose={() => settingsHook.setSettingsOpen(false)}
         settings={settingsHook.settings} onSaveSettings={settingsHook.handleSaveSettings}
@@ -456,6 +467,16 @@ export function App({ projectId, filePath: initialFilePath, onOpenSettings: _onO
         findReplaceOpen={findReplace.findReplaceOpen} onFindReplaceClose={() => findReplace.setFindReplaceOpen(false)}
         onSearch={findReplace.handleSearch} onReplace={findReplace.handleReplace}
         onReplaceAll={findReplace.handleReplaceAll} onNavigate={(cellId) => notebookHook.setActiveCellId(cellId)}
+      />
+      <GenerateCellsModal
+        isOpen={generateCells.isModalOpen}
+        onClose={generateCells.closeModal}
+        onGenerate={generateCells.handleGenerate}
+        isGenerating={generateCells.isGenerating}
+        streamingContent={generateCells.streamingContent}
+        progress={generateCells.progress}
+        error={generateCells.error}
+        listFiles={notebookHook.listFiles}
       />
     </div>
   );

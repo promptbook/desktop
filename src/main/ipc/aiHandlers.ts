@@ -9,6 +9,7 @@ import {
   buildExtractKeywordsPrompt,
   buildOrchestratorPrompt,
   parseOrchestratorResponse,
+  buildGenerateCellsPrompt,
   type ContentType,
   type SyncContext,
 } from '@promptbook/core/sync';
@@ -84,8 +85,6 @@ export function registerAiHandlers(getCurrentSettings: () => { ai?: AiSettings }
     existingCode?: string;
   }): Promise<{ success: boolean; error?: string }> => {
     const { cellId, sourceType, sourceContent, ...contextParams } = params;
-    console.log('[ai:syncStream] Starting sync for cell:', cellId, 'sourceType:', sourceType);
-    console.log('[ai:syncStream] Source content length:', sourceContent?.length);
 
     const context: SyncContext = {
       cellsBefore: contextParams.cellsBefore || [],
@@ -103,20 +102,10 @@ export function registerAiHandlers(getCurrentSettings: () => { ai?: AiSettings }
 
       // Build the prompt using the core library
       const prompt = buildOrchestratorPrompt(sourceType, sourceContent, context);
-      console.log('[ai:syncStream] Built prompt, length:', prompt.length);
-
-      // Send thinking event
-      webContents.send('ai:syncStreamEvent', { cellId, type: 'thinking', content: 'Starting sync...' });
 
       // Dynamic import of claude-agent-sdk (ESM module)
-      console.log('[ai:syncStream] Importing Claude Agent SDK...');
-      console.log('[ai:syncStream] PATH:', process.env.PATH);
-      console.log('[ai:syncStream] CLAUDE_CODE_USE_BEDROCK:', process.env.CLAUDE_CODE_USE_BEDROCK);
-
       const { query } = await import('@anthropic-ai/claude-agent-sdk');
 
-      console.log('[ai:syncStream] Calling Claude Agent SDK query...');
-      console.log('[ai:syncStream] Working directory:', process.cwd());
       let result = '';
 
       // Use the Claude Agent SDK query function
@@ -136,44 +125,26 @@ export function registerAiHandlers(getCurrentSettings: () => { ai?: AiSettings }
           includePartialMessages: true,
         },
       })) {
-        console.log('[ai:syncStream] Received message type:', message.type);
-        console.log('[ai:syncStream] Full message:', JSON.stringify(message, null, 2).slice(0, 500));
-
         // Handle streaming events (partial messages)
         if (message.type === 'stream_event' && 'event' in message) {
           const streamEvent = message as { type: 'stream_event'; event: { type: string; delta?: { type: string; text?: string; thinking?: string } } };
-          const event = streamEvent.event;
-          console.log('[ai:syncStream] Stream event type:', event.type);
+          const evt = streamEvent.event;
 
-          // Handle text delta events
-          if (event.type === 'content_block_delta' && event.delta) {
-            console.log('[ai:syncStream] Delta type:', event.delta.type);
-            if (event.delta.type === 'text_delta' && event.delta.text) {
-              console.log('[ai:syncStream] Sending text delta to renderer, length:', event.delta.text.length);
-              webContents.send('ai:syncStreamEvent', { cellId, type: 'content', content: event.delta.text });
+          if (evt.type === 'content_block_delta' && evt.delta) {
+            if (evt.delta.type === 'text_delta' && evt.delta.text) {
+              webContents.send('ai:syncStreamEvent', { cellId, type: 'content', content: evt.delta.text });
             }
-            // Handle thinking delta events (extended thinking)
-            if (event.delta.type === 'thinking_delta' && event.delta.thinking) {
-              console.log('[ai:syncStream] Sending thinking delta to renderer, length:', event.delta.thinking.length);
-              webContents.send('ai:syncStreamEvent', { cellId, type: 'thinking', content: event.delta.thinking });
+            if (evt.delta.type === 'thinking_delta' && evt.delta.thinking) {
+              webContents.send('ai:syncStreamEvent', { cellId, type: 'thinking', content: evt.delta.thinking });
             }
           }
-        }
-
-        // Check for assistant messages with partial content
-        if (message.type === 'assistant' && 'message' in message) {
-          const assistantMsg = message as { type: 'assistant'; message: { content?: Array<{ type: string; text?: string }> } };
-          console.log('[ai:syncStream] Assistant message content count:', assistantMsg.message.content?.length);
         }
 
         // Collect the final result
         if (message.type === 'result') {
           result = (message as { type: 'result'; result: string }).result;
-          console.log('[ai:syncStream] Got result, length:', result.length);
         }
       }
-
-      console.log('[ai:syncStream] Query complete, result length:', result.length);
 
       if (!result) {
         throw new Error('No result from Claude Agent SDK');
@@ -181,7 +152,6 @@ export function registerAiHandlers(getCurrentSettings: () => { ai?: AiSettings }
 
       // Parse the response using the core library
       const alignedResults = parseOrchestratorResponse(result);
-      console.log('[ai:syncStream] Parsed results successfully');
 
       // Send complete event
       webContents.send('ai:syncStreamEvent', {
@@ -195,11 +165,9 @@ export function registerAiHandlers(getCurrentSettings: () => { ai?: AiSettings }
         },
       });
 
-      console.log('[ai:syncStream] Returning success');
       return { success: true };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      console.error('[ai:syncStream] Error:', errorMessage);
       // Send error event
       event.sender.send('ai:syncStreamEvent', {
         cellId,
@@ -319,6 +287,77 @@ export function registerAiHandlers(getCurrentSettings: () => { ai?: AiSettings }
       return { success: true, papers };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  // Generate multiple cells from a description (streaming)
+  ipcMain.handle('ai:generateCells', async (event, params: {
+    description: string;
+    fileContents?: Record<string, string>;
+    existingCells?: { shortDescription?: string; code?: string }[];
+  }): Promise<{ success: boolean; error?: string }> => {
+    const { description, fileContents, existingCells } = params;
+
+    try {
+      const webContents = event.sender;
+      const prompt = buildGenerateCellsPrompt(description, fileContents, existingCells);
+
+      // Dynamic import of claude-agent-sdk (ESM module)
+      const { query } = await import('@anthropic-ai/claude-agent-sdk');
+
+      let result = '';
+
+      for await (const message of query({
+        prompt,
+        options: {
+          tools: [],
+          permissionMode: 'bypassPermissions',
+          maxTurns: 1,
+          persistSession: false,
+          includePartialMessages: true,
+        },
+      })) {
+        // Handle streaming events
+        if (message.type === 'stream_event' && 'event' in message) {
+          const streamEvent = message as { type: 'stream_event'; event: { type: string; delta?: { type: string; text?: string } } };
+          const evt = streamEvent.event;
+
+          if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta' && evt.delta.text) {
+            webContents.send('ai:generateCellsStream', { type: 'content', content: evt.delta.text });
+          }
+        }
+
+        if (message.type === 'result') {
+          result = (message as { type: 'result'; result: string }).result;
+        }
+      }
+
+      if (!result) {
+        throw new Error('No result from Claude Agent SDK');
+      }
+
+      // Parse the JSON array of cells
+      let cells;
+      try {
+        // Try to extract JSON array from the response
+        const jsonMatch = result.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          cells = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error('No JSON array found in response');
+        }
+      } catch (parseErr) {
+        throw new Error(`Failed to parse cell generation response: ${parseErr}`);
+      }
+
+      // Send complete event with parsed cells
+      webContents.send('ai:generateCellsStream', { type: 'complete', cells });
+
+      return { success: true };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      event.sender.send('ai:generateCellsStream', { type: 'error', error: errorMessage });
       return { success: false, error: errorMessage };
     }
   });
