@@ -137,22 +137,33 @@ export function registerAiHandlers(getCurrentSettings: () => { ai?: AiSettings }
         },
       })) {
         console.log('[ai:syncStream] Received message type:', message.type);
+        console.log('[ai:syncStream] Full message:', JSON.stringify(message, null, 2).slice(0, 500));
 
         // Handle streaming events (partial messages)
         if (message.type === 'stream_event' && 'event' in message) {
           const streamEvent = message as { type: 'stream_event'; event: { type: string; delta?: { type: string; text?: string; thinking?: string } } };
           const event = streamEvent.event;
+          console.log('[ai:syncStream] Stream event type:', event.type);
 
           // Handle text delta events
           if (event.type === 'content_block_delta' && event.delta) {
+            console.log('[ai:syncStream] Delta type:', event.delta.type);
             if (event.delta.type === 'text_delta' && event.delta.text) {
+              console.log('[ai:syncStream] Sending text delta to renderer, length:', event.delta.text.length);
               webContents.send('ai:syncStreamEvent', { cellId, type: 'content', content: event.delta.text });
             }
             // Handle thinking delta events (extended thinking)
             if (event.delta.type === 'thinking_delta' && event.delta.thinking) {
+              console.log('[ai:syncStream] Sending thinking delta to renderer, length:', event.delta.thinking.length);
               webContents.send('ai:syncStreamEvent', { cellId, type: 'thinking', content: event.delta.thinking });
             }
           }
+        }
+
+        // Check for assistant messages with partial content
+        if (message.type === 'assistant' && 'message' in message) {
+          const assistantMsg = message as { type: 'assistant'; message: { content?: Array<{ type: string; text?: string }> } };
+          console.log('[ai:syncStream] Assistant message content count:', assistantMsg.message.content?.length);
         }
 
         // Collect the final result
